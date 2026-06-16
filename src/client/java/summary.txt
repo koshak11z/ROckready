@@ -1,0 +1,9 @@
+Summary for .tmp\rockstar_named.jar
+Decompiled with CFR 0.152
+
+
+moscow.rockstar.systems.modules.modules.player.AutoSwap
+----------------------------
+
+swap()
+  Unable to fully structure code

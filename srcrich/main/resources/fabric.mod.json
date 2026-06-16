@@ -1,0 +1,33 @@
+{
+  "accessWidener": "accesswidener",
+  "schemaVersion": 1,
+  "id": "zov4ik",
+  "version": "1.0",
+  "icon": "assets/minecraft/icon.png",
+  "name": "zov4ik",
+  "description": "zov4ik Client",
+  "authors": [
+    "HZeed",
+    "Bafyy"
+  ],
+  "contact": {
+    "website": "https://zov4ik.fun",
+    "repo": "none"
+  },
+  "license": "All-Rights-Reserved",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "im.zov4ik.zov4ik"
+    ]
+  },
+  "mixins": [
+    "mixins.json",
+    "mixins.baritone-meteor.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.8",
+    "fabric": "*",
+    "minecraft": "~1.21.4"
+  }
+}

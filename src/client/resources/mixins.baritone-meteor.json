@@ -1,0 +1,30 @@
+{
+  "required": true,
+  "package": "baritone.launch.mixins",
+  "compatibilityLevel": "JAVA_17",
+  "verbose": false,
+  "injectors": {
+    "maxShiftBy": 2,
+    "defaultRequire": 0
+  },
+  "client": [
+    "MixinChunkArray",
+    "MixinClientChunkProvider",
+    "MixinClientPlayerEntity",
+    "MixinClientPlayNetHandler",
+    "MixinCommandSuggestionHelper",
+    "MixinEntity",
+    "MixinEntityRenderManager",
+    "MixinItemStack",
+    "MixinLivingEntity",
+    "MixinLootContextBuilder",
+    "MixinMinecraft",
+    "MixinPalettedContainer$Data",
+    "MixinPalettedContainer",
+    "MixinPlayerController",
+    "MixinScreen"
+  ],
+  "mixins": [
+  ],
+  "plugin": "baritone.launch.FabricMixinPlugin"
+}

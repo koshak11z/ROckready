@@ -1,0 +1,739 @@
+﻿package im.zov4ik.features.impl.misc.autobuy;
+
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.experimental.FieldDefaults;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.MathHelper;
+import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.glfw.GLFW;
+import ru.zov.api.system.animation.Animation;
+import ru.zov.api.system.animation.Direction;
+import ru.zov.api.system.animation.implement.DecelerateAnimation;
+import ru.zov.api.system.font.FontRenderer;
+import ru.zov.api.system.font.Fonts;
+import ru.zov.api.system.shape.ShapeProperties;
+import ru.zov.api.system.sound.SoundManager;
+import ru.zov.common.QuickImports;
+import ru.zov.common.util.color.ColorUtil;
+import ru.zov.common.util.math.MathUtil;
+import ru.zov.common.util.render.Render2DUtil;
+import ru.zov.common.util.render.ScissorManager;
+import ru.zov.core.Main;
+import ru.zov.implement.features.modules.misc.AutoBuy;
+
+import java.util.List;
+
+@Getter
+@FieldDefaults(level = AccessLevel.PRIVATE)
+public class AutoBuyScreen extends Screen implements QuickImports {
+    final AutoBuy module;
+    final Animation animation = new DecelerateAnimation().setMs(185).setValue(1);
+
+    AutoBuyItem selectedItem;
+    AutoBuyItem hoveredItem;
+    AutoBuyItem detailItem;
+
+    boolean closing;
+    boolean detailClosing;
+    boolean typingPrice;
+    boolean typingDurability;
+
+    String priceBuffer = "";
+    String durabilityBuffer = "";
+
+    int x;
+    int y;
+    int width;
+    int height;
+
+    float catalogX;
+    float catalogY;
+    float catalogW;
+    float catalogH;
+
+    float detailX;
+    float detailY;
+    float detailW;
+    float detailH;
+    float detailProgress;
+    float detailShownX;
+    float detailHiddenX;
+    float detailAlpha;
+
+    float priceLabelX;
+    float priceLabelW;
+    float priceLabelH;
+    float priceLabelY;
+    float priceInputX;
+    float priceInputY;
+    float priceInputW;
+    float priceInputH;
+
+    float durabilityLabelY;
+    float durabilityInputX;
+    float durabilityInputY;
+    float durabilityInputW;
+    float durabilityInputH;
+
+    float catalogScroll;
+    float catalogScrollAnimated;
+
+    float hoverAlpha;
+    float hoverX;
+    float hoverY;
+    String lastMode = "";
+
+    public AutoBuyScreen(AutoBuy module) {
+        super(Text.of("AutoBuy"));
+        this.module = module;
+    }
+
+    public boolean belongsTo(AutoBuy module) {
+        return this.module == module;
+    }
+
+    public void open() {
+        closing = false;
+        typingPrice = false;
+        typingDurability = false;
+        animation.setDirection(Direction.FORWARDS);
+        mc.setScreen(this);
+        SoundManager.playSound(SoundManager.OPEN_GUI);
+    }
+
+    public void requestClose() {
+        if (closing) {
+            return;
+        }
+        commitInputs();
+        typingPrice = false;
+        typingDurability = false;
+        closing = true;
+        detailClosing = false;
+        detailItem = null;
+        animation.setDirection(Direction.BACKWARDS);
+        SoundManager.playSound(SoundManager.CLOSE_GUI);
+    }
+
+    public void forceClose() {
+        commitInputs();
+        typingPrice = false;
+        typingDurability = false;
+        closing = true;
+        detailClosing = false;
+        detailItem = null;
+        super.close();
+    }
+
+    @Override
+    public void tick() {
+        if (closing && animation.isFinished(Direction.BACKWARDS)) {
+            super.close();
+        }
+    }
+
+    @Override
+    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+        updateLayout();
+        updateAnimations(mouseX, mouseY);
+
+        float scale = animation.getOutput().floatValue();
+        blur.setup();
+        MathUtil.scale(context.getMatrices(), x + width / 2F, y + height / 2F, scale, () -> renderWindow(context, mouseX, mouseY));
+    }
+
+    private void renderWindow(DrawContext context, int mouseX, int mouseY) {
+        MatrixStack matrices = context.getMatrices();
+        int background = ColorUtil.getRect(0.7F);
+        int panel = background;
+        int outline = ColorUtil.getOutline();
+        int headerText = ColorUtil.getText();
+
+        blur.render(ShapeProperties.create(matrices, x, y, width, height)
+                .round(8).softness(150).color(0x2C000000).build());
+        rectangle.render(ShapeProperties.create(matrices, x, y, width, height)
+                .round(8).thickness(1.1F).outlineColor(outline).color(background).build());
+
+        FontRenderer headerFont = Fonts.getSize(15, Fonts.Type.DEFAULT);
+        headerFont.drawCenteredString(matrices, "", x + width / 2.0F, y + 11.0F, headerText);
+
+        drawPanel(context, catalogX, catalogY, catalogW, catalogH, panel);
+        drawCatalog(context, mouseX, mouseY);
+        drawHoverLabel(context);
+        drawDetailSheet(context);
+    }
+
+    private void drawCatalog(DrawContext context, int mouseX, int mouseY) {
+        MatrixStack matrices = context.getMatrices();
+        ScissorManager scissor = Main.getInstance().getScissorManager();
+        List<AutoBuyItem> items = module.getItems();
+
+        float viewportX = catalogViewportX();
+        float viewportY = catalogViewportY();
+        float viewportW = catalogViewportW();
+        float viewportH = catalogViewportH();
+        float tile = catalogTile();
+        float gap = catalogGap();
+        int columns = catalogColumns();
+
+        float contentHeight = gridContentHeight(items.size(), columns, tile, gap);
+        float maxScroll = Math.max(0.0F, contentHeight - viewportH);
+        catalogScroll = MathHelper.clamp(catalogScroll, -maxScroll, 0.0F);
+
+        scissor.push(matrices.peek().getPositionMatrix(), viewportX, viewportY, viewportW, viewportH);
+        for (int index = 0; index < items.size(); index++) {
+            AutoBuyItem item = items.get(index);
+            float tileX = tileX(index);
+            float tileY = tileY(index, catalogScrollAnimated);
+            if (!isTileVisible(tileY, tile, viewportY, viewportH)) {
+                continue;
+            }
+
+            boolean selected = item == selectedItem;
+            boolean configured = item.hasPrice();
+            boolean hovered = isAnimationInteractive() && MathUtil.isHovered(mouseX, mouseY, tileX, tileY, tile, tile);
+
+            int fill = selected ? 0x862A3137 : configured ? 0x7A1F2C34 : hovered ? 0x631A2024 : 0x4A12161A;
+            int border = selected ? 0xFFF7FBFF : configured ? 0xD7EAF4FF : hovered ? 0xB0B9C3CC : 0x56303840;
+            float thickness = selected || configured ? 1.35F : 1.0F;
+            rectangle.render(ShapeProperties.create(matrices, tileX, tileY, tile, tile)
+                    .round(7).thickness(thickness).outlineColor(border).color(fill).build());
+
+            if (configured) {
+                rectangle.render(ShapeProperties.create(matrices, tileX + 1.2F, tileY + 1.2F, tile - 2.4F, tile - 2.4F)
+                        .round(6).thickness(1.05F).outlineColor(0xC4F4FAFF).color(0x00000000).build());
+            }
+
+            float iconX = (float) Math.round(tileX + (tile - 16.0F) / 2.0F);
+            float iconY = (float) Math.round(tileY + (tile - 16.0F) / 2.0F);
+            Render2DUtil.defaultDrawStack(context, item.getIconStack(), iconX, iconY, false, false, 1.0F);
+        }
+        scissor.pop();
+    }
+
+    private void drawHoverLabel(DrawContext context) {
+        if (hoverAlpha < 0.03F || hoveredItem == null) {
+            return;
+        }
+
+        MatrixStack matrices = context.getMatrices();
+        FontRenderer font = Fonts.getSize(16, Fonts.Type.BOLD);
+        String title = font.trimToWidth(hoveredItem.getDisplayName(), 210, false);
+        float textW = font.getStringWidth(title);
+        float boxW = textW + 14.0F;
+        float boxH = 18.0F;
+        float drawX = hoverX - boxW / 2.0F;
+        float drawY = hoverY - 17.0F;
+        int alpha = (int) (hoverAlpha * 255.0F);
+
+        blur.render(ShapeProperties.create(matrices, drawX, drawY, boxW, boxH)
+                .round(6).softness(55).color(ColorUtil.multAlpha(0x16000000, hoverAlpha)).build());
+        rectangle.render(ShapeProperties.create(matrices, drawX, drawY, boxW, boxH)
+                .round(6).thickness(1.0F).outlineColor((alpha << 24) | 0xD9E0E6).color((Math.min(alpha, 214) << 24) | 0x101418).build());
+        font.drawCenteredString(matrices, title, drawX + boxW / 2.0F, drawY + 7.5F, (alpha << 24) | 0xF5F8FB);
+    }
+
+    private void drawDetailSheet(DrawContext context) {
+        AutoBuyItem activeItem = detailItem != null ? detailItem : selectedItem;
+        if (detailProgress < 0.03F || activeItem == null) {
+            return;
+        }
+
+        MatrixStack matrices = context.getMatrices();
+        RenderSystem.disableDepthTest();
+        matrices.push();
+        matrices.translate(0.0F, 0.0F, 300.0F);
+        float alpha = detailAlpha;
+        if (alpha < 0.03F) {
+            matrices.pop();
+            RenderSystem.enableDepthTest();
+            return;
+        }
+        FontRenderer titleFont = Fonts.getSize(15, Fonts.Type.BOLD);
+        FontRenderer labelFont = Fonts.getSize(12, Fonts.Type.BOLD);
+        FontRenderer inputFont = Fonts.getSize(12, Fonts.Type.DEFAULT);
+        int baseFill = ColorUtil.multAlpha(ColorUtil.getRect(0.7F), alpha);
+        int baseOutline = ColorUtil.multAlpha(0xFFD9DFE5, alpha);
+        blur.render(ShapeProperties.create(matrices, detailX, detailY, detailW, detailH)
+                .round(10).softness(130).color(ColorUtil.multAlpha(0x28000000, alpha)).build());
+        rectangle.render(ShapeProperties.create(matrices, detailX, detailY, detailW, detailH)
+                .round(10).thickness(1.05F).outlineColor(baseOutline).color(baseFill).build());
+
+        Render2DUtil.defaultDrawStack(context, activeItem.getIconStack(), detailX + 12.0F, detailY + 10.0F, false, false, 0.98F);
+        String title = titleFont.trimToWidth(activeItem.getDisplayName(), (int) (detailW - 52.0F), false);
+        titleFont.drawString(matrices, title, detailX + 34.0F, detailY + 18.0F, ColorUtil.multAlpha(0xFFF5F8FB, alpha));
+
+        layoutDetailControls();
+
+        String priceLabel = "\u0426\u0435\u043d\u0430 \u0437\u0430 \u0441\u0442\u0430\u043a: " + getStackPriceText(activeItem);
+        drawMarqueeText(context, labelFont, priceLabel, priceLabelX, priceLabelY, priceLabelW, ColorUtil.multAlpha(0xFFDDE4EA, alpha));
+
+        rectangle.render(ShapeProperties.create(matrices, priceInputX, priceInputY, priceInputW, priceInputH)
+                .round(7).thickness(1.1F)
+                .outlineColor(ColorUtil.multAlpha(typingPrice ? 0xFFF2F6FA : 0xFF707983, alpha))
+                .color(ColorUtil.multAlpha(0x80101419, alpha)).build());
+
+        String displayPrice = priceBuffer.isBlank() ? "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0446\u0435\u043d\u0443" : AutoBuyItem.formatPrice(priceBuffer);
+        int priceColor = priceBuffer.isBlank() ? 0xFF8E98A2 : 0xFFF5F8FB;
+        float priceTextY = priceInputY + (priceInputH - inputFont.getStringHeight(displayPrice)) / 2.0F + 4.6F;
+        inputFont.drawString(matrices, displayPrice, priceInputX + 7.0F, priceTextY, ColorUtil.multAlpha(priceColor, alpha));
+
+        if (typingPrice && System.currentTimeMillis() % 900L < 450L) {
+            float caretX = priceInputX + 7.0F + inputFont.getStringWidth(displayPrice) + 2.0F;
+            rectangle.render(ShapeProperties.create(matrices, caretX, priceInputY + 3.5F, 1.0F, priceInputH - 7.0F)
+                    .color(ColorUtil.multAlpha(0xFFF1F5F8, alpha)).build());
+        }
+
+        if (activeItem.supportsDurability()) {
+            labelFont.drawString(matrices, "\u041c\u0438\u043d. \u043f\u0440\u043e\u0447\u043d\u043e\u0441\u0442\u044c, %:", durabilityInputX, durabilityLabelY, ColorUtil.multAlpha(0xFFDDE4EA, alpha));
+            rectangle.render(ShapeProperties.create(matrices, durabilityInputX, durabilityInputY, durabilityInputW, durabilityInputH)
+                    .round(7).thickness(1.1F)
+                    .outlineColor(ColorUtil.multAlpha(typingDurability ? 0xFFF2F6FA : 0xFF707983, alpha))
+                    .color(ColorUtil.multAlpha(0x80101419, alpha)).build());
+
+            String displayDurability = durabilityBuffer.isBlank() ? "\u0412\u0432\u0435\u0434\u0438\u0442\u0435 %" : durabilityBuffer + "%";
+            int durabilityColor = durabilityBuffer.isBlank() ? 0xFF8E98A2 : 0xFFF5F8FB;
+            float durabilityTextY = durabilityInputY + (durabilityInputH - inputFont.getStringHeight(displayDurability)) / 2.0F + 4.6F;
+            inputFont.drawString(matrices, displayDurability, durabilityInputX + 7.0F, durabilityTextY, ColorUtil.multAlpha(durabilityColor, alpha));
+
+            if (typingDurability && System.currentTimeMillis() % 900L < 450L) {
+                float caretX = durabilityInputX + 7.0F + inputFont.getStringWidth(displayDurability) + 2.0F;
+                rectangle.render(ShapeProperties.create(matrices, caretX, durabilityInputY + 3.5F, 1.0F, durabilityInputH - 7.0F)
+                        .color(ColorUtil.multAlpha(0xFFF1F5F8, alpha)).build());
+            }
+        }
+
+        matrices.pop();
+        RenderSystem.enableDepthTest();
+    }
+
+    
+
+    private void drawPanel(DrawContext context, float panelX, float panelY, float panelW, float panelH, int fillColor) {
+        MatrixStack matrices = context.getMatrices();
+        blur.render(ShapeProperties.create(matrices, panelX, panelY, panelW, panelH)
+                .round(8).softness(120).color(0x22000000).build());
+        rectangle.render(ShapeProperties.create(matrices, panelX, panelY, panelW, panelH)
+                .round(8).thickness(1.0F).outlineColor(ColorUtil.getOutline()).color(fillColor).build());
+    }
+
+    private void updateAnimations(int mouseX, int mouseY) {
+        String mode = module.getServerMode().getSelected();
+        if (!mode.equals(lastMode)) {
+            commitInputs();
+            lastMode = mode;
+            selectedItem = null;
+            hoveredItem = null;
+            detailItem = null;
+            detailClosing = false;
+            priceBuffer = "";
+            durabilityBuffer = "";
+            typingPrice = false;
+            typingDurability = false;
+            catalogScroll = 0.0F;
+            catalogScrollAnimated = 0.0F;
+        }
+
+        catalogScrollAnimated = animateScroll(catalogScrollAnimated, catalogScroll);
+
+        float targetDetail = detailItem == null || closing ? 0.0F : (detailClosing ? 0.0F : 1.0F);
+        detailProgress = MathHelper.lerp(0.3F, detailProgress, targetDetail);
+        if (Math.abs(detailProgress - targetDetail) < 0.01F) {
+            detailProgress = targetDetail;
+        }
+        detailAlpha = MathHelper.clamp(detailProgress, 0.0F, 1.0F);
+        detailX = MathHelper.lerp(detailProgress, detailHiddenX, detailShownX);
+        if (detailClosing && detailProgress <= 0.02F) {
+            detailItem = null;
+            detailClosing = false;
+        }
+
+        updateHoverState(mouseX, mouseY);
+        hoverAlpha = MathHelper.lerp(0.28F, hoverAlpha, hoveredItem == null ? 0.0F : 1.0F);
+        if (hoverAlpha < 0.01F) {
+            hoverAlpha = 0.0F;
+        }
+    }
+
+    private void updateHoverState(int mouseX, int mouseY) {
+        AutoBuyItem newHover = null;
+        float newHoverX = hoverX;
+        float newHoverY = hoverY;
+        if (isAnimationInteractive()) {
+            newHover = findHoveredCatalogItem(mouseX, mouseY);
+            if (newHover != null) {
+                int index = module.getItems().indexOf(newHover);
+                newHoverX = tileX(index) + catalogTile() / 2.0F;
+                newHoverY = tileY(index, catalogScrollAnimated);
+            }
+        }
+
+        hoveredItem = newHover;
+        hoverX = MathHelper.lerp(0.32F, hoverX, newHoverX);
+        hoverY = MathHelper.lerp(0.32F, hoverY, newHoverY);
+    }
+
+    private AutoBuyItem findHoveredCatalogItem(int mouseX, int mouseY) {
+        float viewportY = catalogViewportY();
+        float viewportH = catalogViewportH();
+        float tile = catalogTile();
+        List<AutoBuyItem> items = module.getItems();
+        for (int index = 0; index < items.size(); index++) {
+            float tileX = tileX(index);
+            float tileY = tileY(index, catalogScrollAnimated);
+            if (!isTileVisible(tileY, tile, viewportY, viewportH)) {
+                continue;
+            }
+            if (MathUtil.isHovered(mouseX, mouseY, tileX, tileY, tile, tile)) {
+                return items.get(index);
+            }
+        }
+        return null;
+    }
+
+    private void selectItem(AutoBuyItem item) {
+        commitInputs();
+        selectedItem = item;
+        detailItem = item;
+        detailClosing = false;
+        priceBuffer = item == null ? "" : item.getRawPrice();
+        durabilityBuffer = item == null ? "" : item.getRawDurability();
+        typingPrice = false;
+        typingDurability = false;
+    }
+
+    private void clearPrice(AutoBuyItem item) {
+        item.setRawPrice("");
+        if (selectedItem == item) {
+            priceBuffer = "";
+            typingPrice = false;
+        }
+    }
+
+    private void commitInputs() {
+        if (selectedItem != null) {
+            selectedItem.setRawPrice(priceBuffer);
+            selectedItem.setRawDurability(durabilityBuffer);
+        }
+    }
+
+    private void closeDetail() {
+        commitInputs();
+        selectedItem = null;
+        detailClosing = true;
+        typingPrice = false;
+        typingDurability = false;
+        priceBuffer = "";
+        durabilityBuffer = "";
+    }
+
+    private boolean isInDetail(double mouseX, double mouseY) {
+        return MathUtil.isHovered(mouseX, mouseY, detailX, detailY, detailW, detailH);
+    }
+
+    private boolean isAnimationInteractive() {
+        return !closing && animation.getOutput().floatValue() > 0.98F;
+    }
+
+    private float animateScroll(float current, float target) {
+        float next = MathHelper.lerp(0.28F, current, target);
+        return Math.abs(next - target) < 0.2F ? target : next;
+    }
+
+    private void updateLayout() {
+        width = Math.min(window.getScaledWidth() - 420, 252);
+        height = Math.min(window.getScaledHeight() - 138, 248);
+        x = window.getScaledWidth() / 2 - width / 2;
+        y = window.getScaledHeight() / 2 - height / 2;
+
+        catalogX = x + 8.0F;
+        catalogY = y + 8.0F;
+        catalogW = width - 16.0F;
+        catalogH = height - 16.0F;
+
+        float gap = 12.0F;
+        detailW = MathHelper.clamp(190.0F, 150.0F, Math.max(150.0F, window.getScaledWidth() - (x + width) - gap - 6.0F));
+        detailH = Math.min(180.0F, height - 12.0F);
+        detailY = y + (height - detailH) / 2.0F;
+        detailShownX = x + width + gap;
+        detailHiddenX = detailShownX + detailW + 18.0F;
+
+        if (detailShownX + detailW > window.getScaledWidth() - 6.0F) {
+            float leftX = x - gap - detailW;
+            if (leftX >= 6.0F) {
+                detailShownX = leftX;
+                detailHiddenX = leftX - detailW - 18.0F;
+            } else {
+                detailShownX = x + (width - detailW) / 2.0F;
+                detailHiddenX = detailShownX;
+            }
+        }
+    }
+
+    private float calcDetailHeight() {
+        float height = 30.0F;
+        height += 12.0F + 4.0F + 18.0F + 8.0F;
+        if (selectedItem != null && selectedItem.supportsDurability()) {
+            height += 12.0F + 4.0F + 18.0F + 8.0F;
+        }
+        if (selectedItem != null && selectedItem.supportsThornsMode()) {
+            height += 12.0F + 4.0F + 16.0F + 8.0F;
+        }
+        return height + 8.0F;
+    }
+
+    private float getShownDetailY() {
+        return catalogY;
+    }
+
+    private float getHiddenDetailY() {
+        return window.getScaledHeight() + detailH + 12.0F;
+    }
+
+    private float catalogPadding() {
+        return 10.0F;
+    }
+
+    private float catalogTile() {
+        return 30.0F;
+    }
+
+    private float catalogGap() {
+        return 6.0F;
+    }
+
+    private int catalogColumns() {
+        return 6;
+    }
+
+    private float catalogViewportX() {
+        return catalogX + catalogPadding();
+    }
+
+    private float catalogViewportY() {
+        return catalogY + catalogPadding();
+    }
+
+    private float catalogViewportW() {
+        return catalogW - catalogPadding() * 2.0F;
+    }
+
+    private float catalogViewportH() {
+        return catalogH - catalogPadding() * 2.0F;
+    }
+
+    private float tileX(int index) {
+        float tile = catalogTile();
+        float gap = catalogGap();
+        int columns = catalogColumns();
+        float gridWidth = columns * tile + (columns - 1) * gap;
+        float offsetX = (catalogViewportW() - gridWidth) / 2.0F;
+        return (float) Math.round(catalogViewportX() + offsetX + (index % columns) * (tile + gap));
+    }
+
+    private float tileY(int index, float animatedScroll) {
+        return (float) Math.round(catalogViewportY() + (index / catalogColumns()) * (catalogTile() + catalogGap()) + animatedScroll);
+    }
+
+    private float gridContentHeight(int itemCount, int columns, float tile, float gap) {
+        int rows = Math.max(1, (int) Math.ceil(itemCount / (float) columns));
+        return Math.max(0.0F, rows * (tile + gap) - gap);
+    }
+
+    private boolean isTileVisible(float tileY, float tileSize, float viewportY, float viewportH) {
+        return tileY + tileSize >= viewportY && tileY <= viewportY + viewportH;
+    }
+
+    private void layoutDetailControls() {
+        AutoBuyItem activeItem = detailItem != null ? detailItem : selectedItem;
+        float contentW = Math.min(240.0F, detailW - 32.0F);
+        float centerX = detailX + detailW / 2.0F;
+        float cursorY = detailY + 38.0F;
+
+        priceLabelY = cursorY;
+        priceLabelH = 12.0F;
+        priceLabelW = contentW;
+        priceLabelX = centerX - priceLabelW / 2.0F;
+        cursorY += 12.0F + 6.0F;
+        priceInputW = contentW;
+        priceInputH = 20.0F;
+        priceInputX = centerX - priceInputW / 2.0F;
+        priceInputY = cursorY;
+        cursorY += priceInputH + 10.0F;
+
+        durabilityLabelY = cursorY;
+        durabilityInputW = contentW;
+        durabilityInputH = 20.0F;
+        durabilityInputX = centerX - durabilityInputW / 2.0F;
+        if (activeItem != null && activeItem.supportsDurability()) {
+            cursorY += 12.0F + 4.0F;
+            durabilityInputY = cursorY;
+            cursorY += durabilityInputH + 10.0F;
+        }
+
+        
+    }
+
+    private void drawMarqueeText(DrawContext context, FontRenderer font, String text, float x, float y, float width, int color) {
+        MatrixStack matrices = context.getMatrices();
+        float textWidth = font.getStringWidth(text);
+        if (textWidth <= width) {
+            font.drawString(matrices, text, x, y, color);
+            return;
+        }
+
+        float overflow = textWidth - width;
+        float cycle = Math.max(1800.0F, 900.0F + overflow * 18.0F);
+        float t = (System.currentTimeMillis() % (long) cycle) / cycle;
+        float offset = (float) ((Math.sin(t * Math.PI * 2.0F) * 0.5F + 0.5F) * overflow);
+        ScissorManager scissor = Main.getInstance().getScissorManager();
+        float clipH = font.getStringHeight(text) + 2.0F;
+        scissor.push(matrices.peek().getPositionMatrix(), x, y - 1.0F, width, clipH);
+        font.drawString(matrices, text, x - offset, y, color);
+        scissor.pop();
+    }
+
+    private String getStackPriceText(AutoBuyItem item) {
+        String raw = AutoBuyItem.normalizeDigits(priceBuffer);
+        if (raw.isBlank()) {
+            raw = item.getRawPrice();
+        }
+        if (raw.isBlank()) {
+            return "\u043d\u0435 \u0432\u043a\u043b\u044e\u0447\u0451\u043d";
+        }
+        try {
+            long unitPrice = Long.parseLong(raw);
+            long stackPrice = Math.max(1L, unitPrice) * Math.max(1, item.getIconStack().getMaxCount());
+            return AutoBuyItem.formatPrice(String.valueOf(stackPrice));
+        } catch (NumberFormatException ignored) {
+            return "\u043d\u0435 \u0432\u043a\u043b\u044e\u0447\u0451\u043d";
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        updateLayout();
+        if (!isAnimationInteractive()) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        AutoBuyItem hoveredCatalog = findHoveredCatalogItem((int) mouseX, (int) mouseY);
+        if (hoveredCatalog != null) {
+            if (button == 1) {
+                clearPrice(hoveredCatalog);
+            } else if (button == 0) {
+                selectItem(hoveredCatalog);
+            }
+            return true;
+        }
+
+        boolean detailOpen = detailItem != null && detailProgress > 0.96F && !detailClosing;
+        if (detailOpen) {
+            layoutDetailControls();
+            if (MathUtil.isHovered(mouseX, mouseY, priceInputX, priceInputY, priceInputW, priceInputH)) {
+                typingPrice = true;
+                typingDurability = false;
+                return true;
+            }
+            if (selectedItem.supportsDurability() && MathUtil.isHovered(mouseX, mouseY, durabilityInputX, durabilityInputY, durabilityInputW, durabilityInputH)) {
+                typingDurability = true;
+                typingPrice = false;
+                return true;
+            }
+            if (isInDetail(mouseX, mouseY)) {
+                typingPrice = false;
+                typingDurability = false;
+                return true;
+            }
+        }
+
+        if (detailItem != null && !detailClosing && !isInDetail(mouseX, mouseY)) {
+            closeDetail();
+            return true;
+        }
+
+        commitInputs();
+        typingPrice = false;
+        typingDurability = false;
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        updateLayout();
+        if (MathUtil.isHovered(mouseX, mouseY, catalogViewportX(), catalogViewportY(), catalogViewportW(), catalogViewportH())) {
+            catalogScroll += verticalAmount * 16.0F;
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (typingPrice || typingDurability) {
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                typingPrice = false;
+                typingDurability = false;
+                commitInputs();
+                if (keyCode == GLFW.GLFW_KEY_ESCAPE && selectedItem != null) {
+                    closeDetail();
+                }
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (typingPrice && !priceBuffer.isEmpty()) {
+                    priceBuffer = priceBuffer.substring(0, priceBuffer.length() - 1);
+                }
+                if (typingDurability && !durabilityBuffer.isEmpty()) {
+                    durabilityBuffer = durabilityBuffer.substring(0, durabilityBuffer.length() - 1);
+                }
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                if (typingPrice) {
+                    priceBuffer = "";
+                }
+                if (typingDurability) {
+                    durabilityBuffer = "";
+                }
+                return true;
+            }
+        }
+
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (detailItem != null && !detailClosing) {
+                closeDetail();
+                return true;
+            }
+            requestClose();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char chr, int modifiers) {
+        if (typingPrice) {
+            if (Character.isDigit(chr) && priceBuffer.length() < 16) {
+                priceBuffer += chr;
+            }
+            return true;
+        }
+        if (typingDurability) {
+            if (Character.isDigit(chr) && durabilityBuffer.length() < 3) {
+                durabilityBuffer += chr;
+            }
+            return true;
+        }
+        return super.charTyped(chr, modifiers);
+    }
+
+    @Override
+    public boolean shouldPause() {
+        return false;
+    }
+}
+
