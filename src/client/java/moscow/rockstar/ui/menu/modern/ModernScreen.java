@@ -42,6 +42,7 @@ import moscow.rockstar.ui.components.popup.Popup;
 import moscow.rockstar.ui.components.popup.list.CheckBox;
 import moscow.rockstar.ui.components.textfield.FieldAction;
 import moscow.rockstar.ui.components.textfield.TextField;
+import moscow.rockstar.ui.hud.Glyphs;
 import moscow.rockstar.ui.menu.MenuScreen;
 import moscow.rockstar.ui.menu.api.MenuCategory;
 import moscow.rockstar.ui.menu.dropdown.components.MenuPanel;
@@ -56,7 +57,6 @@ import moscow.rockstar.ui.menu.dropdown.components.settings.impl.SliderSettingCo
 import moscow.rockstar.ui.menu.dropdown.components.settings.impl.StringSettingComponent;
 import moscow.rockstar.ui.menu.modern.ModernCategory;
 import moscow.rockstar.ui.menu.modern.components.ModernModule;
-import moscow.rockstar.ui.menu.modern.components.ModernSettings;
 import moscow.rockstar.utility.animation.base.Animation;
 import moscow.rockstar.utility.animation.base.Easing;
 import moscow.rockstar.utility.colors.Colors;
@@ -97,8 +97,8 @@ IScaledResolution {
     private MenuCategory current = MenuCategory.COMBAT;
     private final List<ColorPicker> colorPickers = new LinkedList<ColorPicker>();
     private final List<ModernCategory> categories = new ArrayList<ModernCategory>();
-    private final List<ModernSettings> windows = new LinkedList<ModernSettings>();
     private final Animation currentCategory = new Animation(300L, Easing.BAKEK_SMALLER);
+    private boolean themeEditorOpen;
     private final TextField searchField;
     private final PenisPlayer searchPenis;
     private boolean prevFocused;
@@ -118,13 +118,17 @@ IScaledResolution {
     private ColorPicker themeSliderCirclePicker;
     private ColorPicker themeSliderWindowPicker;
     private ColorPicker themeTooltipTextPicker;
+    private ColorPicker themeAutoPicker;
     private Popup visualsModulesPopup;
     private Popup blurElementsPopup;
     Timer timer = new Timer();
 
+    private static final float TOP_BAR = 36.0f;
+    private static final float TAB_W = 34.0f;
+
     public ModernScreen() {
-        float width = 500.0f;
-        float height = 343.0f;
+        float width = 510.0f;
+        float height = 300.0f;
         this.menuWindow = new Rect(sr.getScaledWidth() / 2.0f - width / 2.0f, sr.getScaledHeight() / 2.0f - height / 2.0f, width, height);
         this.categories.clear();
         for (MenuCategory category : MenuCategory.values()) {
@@ -182,186 +186,173 @@ IScaledResolution {
             this.searchPenis.playOnce();
         }
         this.prevFocused = this.searchField.isFocused();
+        // while searching, jump to the category that contains a match
+        if (this.searchField != null && !this.searchField.getBuiltText().isBlank()
+                && this.activeCategory().getModules().stream().noneMatch(m -> !this.searchCheck(m))) {
+            for (ModernCategory c : this.categories) {
+                if (c.getModules().stream().anyMatch(m -> !this.searchCheck(m))) {
+                    this.current = c.getCategory();
+                    break;
+                }
+            }
+        }
         float scroll = (float)(-this.scrollHandler.getValue());
         float alpha = Math.min(1.0f, this.menuAnimation.getValue());
-        for (ModernCategory category : this.categories) {
-            if (!((double)(category.getY() - scroll) <= -this.scrollHandler.getTargetValue()) || this.current == category.getCategory()) continue;
-            this.current = category.getCategory();
-        }
         boolean dark = Rockstar.getInstance().getThemeManager().getCurrentTheme() == Theme.DARK;
         RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)alpha);
         RenderUtility.scale(context.getMatrices(), this.menuWindow.getX() + this.menuWindow.getWidth() / 2.0f, this.menuWindow.getY() + this.menuWindow.getHeight() / 2.0f, 0.5f + 0.5f * this.menuAnimation.getValue());
         if (Interface.blurMenuEnabled()) {
             context.drawBlurredRect(this.menuWindow.getX(), this.menuWindow.getY(), this.menuWindow.getWidth(), this.menuWindow.getHeight(), 45.0f, 5.0f, BorderRadius.all(16.0f), Colors.WHITE);
         }
-        context.drawSquircle(this.menuWindow.getX(), this.menuWindow.getY(), this.menuWindow.getWidth(), this.menuWindow.getHeight(), 5.0f, BorderRadius.all(16.0f), dark ? Colors.getAdditionalColor().mulAlpha(0.98f) : Colors.getBackgroundColor().mulAlpha(0.95f));
-        context.drawShadow(this.menuWindow.getX() + 5.0f, this.menuWindow.getY() + 5.0f, 109.0f, 333.0f, 20.0f, BorderRadius.all(14.0f), Colors.BLACK.mulAlpha(0.2f));
-        if (Interface.blurSidebarEnabled()) {
-            context.drawBlurredRect(this.menuWindow.getX() + 5.0f, this.menuWindow.getY() + 5.0f, 109.0f, 333.0f, 45.0f, BorderRadius.all(12.0f), Colors.WHITE);
+        // liquid glass synced with the rest of the HUD
+        if (Interface.showGlass()) {
+            context.drawLiquidGlass(this.menuWindow.getX(), this.menuWindow.getY(), this.menuWindow.getWidth(), this.menuWindow.getHeight(), 5.0f, 0.08f, BorderRadius.all(16.0f), Colors.WHITE.withAlpha(255.0f * alpha * Interface.glass()));
         }
-        context.drawRoundedRect(this.menuWindow.getX() + 5.0f, this.menuWindow.getY() + 5.0f, 109.0f, 333.0f, BorderRadius.all(12.0f), Colors.getBackgroundColor().mulAlpha(dark ? 0.85f : 0.65f));
+        context.drawSquircle(this.menuWindow.getX(), this.menuWindow.getY(), this.menuWindow.getWidth(), this.menuWindow.getHeight(), 5.0f, BorderRadius.all(16.0f), (dark ? Colors.getAdditionalColor().mulAlpha(0.98f) : Colors.getBackgroundColor().mulAlpha(0.95f)).mulAlpha(1.0f - 0.4f * Interface.glass()));
         float x = this.menuWindow.getX();
         float y = this.menuWindow.getY();
-        float yOff = 0.0f;
-        float xOff = 0.0f;
-        float moduleWidth = 177.0f;
-        context.drawRoundedRect(x + 13.0f, y + 13.0f, 93.0f, 14.0f, BorderRadius.all(3.0f), dark ? Colors.getAdditionalColor().mulAlpha(0.6f) : Colors.getBackgroundColor().mulAlpha(0.6f));
-        DrawUtility.drawAnimationSprite(context.getMatrices(), this.searchPenis.getCurrentSprite(), x + 16.0f, y + 16.0f, 8.0f, 8.0f, Colors.getTextColor().mulAlpha(0.5f));
-        this.searchField.set(x + 21.0f, y + 13.0f, 80.0f, 14.0f);
-        this.searchField.setTextColor(Colors.getTextColor().mulAlpha(0.5f));
+        float w = this.menuWindow.getWidth();
+        // window border + top-bar divider
+        context.drawRoundedBorder(x, y, w, this.menuWindow.getHeight(), 1.0f, BorderRadius.all(16.0f), Colors.getAccentColor().mulAlpha(0.12f));
+        context.drawRect(x + 1.0f, y + TOP_BAR, w - 2.0f, 1.0f, Colors.getTextColor().mulAlpha(0.06f));
+
+
+        
+        // brand logo (left)
+        Glyphs.zLogo(context, x + 14.0f, y + (TOP_BAR - 14.0f) / 2.0f, 14.0f, Colors.getAccentColor());
+        // search field (top-right)
+        float fieldW = 108.0f;
+        float fieldX = x + w - 14.0f - fieldW;
+        float fieldY = y + (TOP_BAR - 15.0f) / 2.0f;
+        context.drawRoundedRect(fieldX, fieldY, fieldW, 15.0f, BorderRadius.all(5.0f), dark ? Colors.getBackgroundColor().mulAlpha(0.6f) : Colors.getBackgroundColor().mulAlpha(0.5f));
+        DrawUtility.drawAnimationSprite(context.getMatrices(), this.searchPenis.getCurrentSprite(), fieldX + 5.0f, fieldY + 3.5f, 8.0f, 8.0f, Colors.getTextColor().mulAlpha(0.5f));
+        this.searchField.set(fieldX + 16.0f, fieldY, fieldW - 20.0f, 15.0f);
+        this.searchField.setTextColor(Colors.getTextColor().mulAlpha(0.6f));
         this.searchField.render(context);
         RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)alpha);
-        FontBatching regularBatching = new FontBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.REGULAR);
-        context.drawText(Fonts.REGULAR.getFont(6.0f), "\u0424\u0443\u043d\u043a\u0446\u0438\u0438", x + 14.0f, y + 35.0f, Colors.getTextColor().mulAlpha(0.3f));
-        regularBatching.draw();
-        for (ModernCategory modernCategory : this.categories) {
-            this.currentCategory.setDuration(150L);
-            this.currentCategory.setEasing(Easing.QUAD_OUT);
-            if (modernCategory.getCategory() == this.current) {
-                this.currentCategory.update(yOff);
+        // category tabs (centered)
+        int n = this.categories.size();
+        float tabsStart = x + w / 2.0f - (float)n * TAB_W / 2.0f;
+        int curIdx = 0;
+        for (int i = 0; i < n; ++i) {
+            if (this.categories.get(i).getCategory() == this.current) {
+                curIdx = i;
             }
-            if (GuiUtility.isHovered(x + 12.0f, y + 43.0f + yOff, 95.0, 16.0, context)) {
+        }
+        this.currentCategory.setDuration(220L);
+        this.currentCategory.setEasing(Easing.QUAD_OUT);
+        this.currentCategory.update((float)curIdx * TAB_W);
+        float iconY = y + (TOP_BAR - 11.0f) / 2.0f - 1.0f;
+        IconBatching iconBatchingCat = new IconBatching(VertexFormats.POSITION_TEXTURE_COLOR, context.getMatrices());
+        for (int i = 0; i < n; ++i) {
+            ModernCategory cat = this.categories.get(i);
+            cat.getSelected().update(cat.getCategory() == this.current);
+            float tx = tabsStart + (float)i * TAB_W;
+            if (GuiUtility.isHovered(tx, y, TAB_W, TOP_BAR, context)) {
                 CursorUtility.set(CursorType.HAND);
             }
-            yOff += 18.0f;
-        }
-        context.drawSquircle(x + 12.0f, y + 43.0f + this.currentCategory.getValue(), 95.0f, 16.0f, 10.0f, BorderRadius.all(4.0f), Colors.getAccentColor());
-        yOff = 0.0f;
-        IconBatching iconBatchingCat = new IconBatching(VertexFormats.POSITION_TEXTURE_COLOR, context.getMatrices());
-        for (ModernCategory modernCategory : this.categories) {
-            modernCategory.getSelected().update(modernCategory.getCategory() == this.current);
-            if (modernCategory.getPenis() == null) {
-                context.drawSprite(modernCategory.getCategory().getMenuSprite(), x + 18.0f, y + 47.0f + yOff, 8.0f, 8.0f, Colors.getTextColor().mix(Colors.WHITE, modernCategory.getSelected().getValue()));
+            if (cat.getPenis() == null) {
+                context.drawSprite(cat.getCategory().getMenuSprite(), tx + (TAB_W - 11.0f) / 2.0f, iconY, 11.0f, 11.0f, Colors.getTextColor().mulAlpha(0.5f).mix(Colors.getAccentColor(), cat.getSelected().getValue()));
             }
-            yOff += 18.0f;
         }
         iconBatchingCat.draw();
-        yOff = 0.0f;
         IconBatching iconBatching = new IconBatching(VertexFormats.POSITION_TEXTURE_COLOR, context.getMatrices());
-        for (ModernCategory modernCategory : this.categories) {
-            modernCategory.getSelected().update(modernCategory.getCategory() == this.current);
-            if (modernCategory.getPenis() != null) {
-                DrawUtility.drawAnimationSprite(context.getMatrices(), modernCategory.getPenis().getCurrentSprite(), x + 18.0f, y + 47.0f + yOff, 8.0f, 8.0f, Colors.getTextColor().mix(Colors.WHITE, modernCategory.getSelected().getValue()));
+        for (int i = 0; i < n; ++i) {
+            ModernCategory cat = this.categories.get(i);
+            float tx = tabsStart + (float)i * TAB_W;
+            if (cat.getPenis() != null) {
+                DrawUtility.drawAnimationSprite(context.getMatrices(), cat.getPenis().getCurrentSprite(), tx + (TAB_W - 11.0f) / 2.0f, iconY, 11.0f, 11.0f, Colors.getTextColor().mulAlpha(0.5f).mix(Colors.getAccentColor(), cat.getSelected().getValue()));
             }
-            yOff += 18.0f;
         }
         iconBatching.draw();
-        yOff = 0.0f;
-        FontBatching fontBatching = new FontBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.MEDIUM);
-        for (ModernCategory category : this.categories) {
-            context.drawText(Fonts.MEDIUM.getFont(7.0f), category.getCategory().getName(), x + 32.0f, y + 48.5f + yOff, Colors.getTextColor().mix(Colors.WHITE, category.getSelected().getValue()));
-            yOff += 18.0f;
-        }
-        fontBatching.draw();
+        float ulW = 16.0f;
+        context.drawRoundedRect(tabsStart + this.currentCategory.getValue() + (TAB_W - ulW) / 2.0f, y + TOP_BAR - 3.0f, ulW, 2.0f, BorderRadius.all(1.0f), Colors.getAccentColor());
 
-        this.renderThemeEditor(context, x, y, dark);
-        float f = yOff = scroll;
-        ScissorUtility.push(context.getMatrices(), this.menuWindow.getX(), this.menuWindow.getY() + 1.0f, this.menuWindow.getWidth(), this.menuWindow.getHeight() - 2.0f);
+        // theme editor toggle button (top-bar, left of search) — opens a separate panel, not inline
+        float teSize = 13.0f;
+        float teX = fieldX - 10.0f - teSize;
+        float teY = y + (TOP_BAR - teSize) / 2.0f;
+        boolean teHover = GuiUtility.isHovered(teX, teY, teSize, teSize, context);
+        if (teHover) {
+            CursorUtility.set(CursorType.HAND);
+        }
+        Glyphs.diamond(context, teX, teY, teSize, (this.themeEditorOpen ? Colors.getAccentColor() : Colors.getTextColor().mulAlpha(0.55f)).mix(Colors.getAccentColor(), teHover ? 0.4f : 0.0f));
+
+        // ── single active category, 3-column masonry, inline settings ──
+        int columns = 3;
+        float contentX = x + 12.0f;
+        float contentW = w - 24.0f;
+        float gap = 7.0f;
+        float cardW = (contentW - (columns - 1) * gap) / columns;
+        float top = y + TOP_BAR + 8.0f;
+        float[] colY = new float[columns];
+        for (int i = 0; i < columns; i++) {
+            colY[i] = top + scroll;
+        }
+        ModernCategory active = this.activeCategory();
+        ScissorUtility.push(context.getMatrices(), this.menuWindow.getX(), this.menuWindow.getY() + TOP_BAR + 1.0f, this.menuWindow.getWidth(), this.menuWindow.getHeight() - TOP_BAR - 2.0f);
+        // 1) card backgrounds (+ compute layout)
         SquircleBatching squircleBatching = new SquircleBatching(5.0f);
-        for (ModernCategory modernCategory : this.categories) {
-            float prev = yOff;
-            modernCategory.setY(yOff);
-            for (ModernModule modernModule : modernCategory.getModules()) {
-                boolean cond = !this.opened(modernModule);
-                modernModule.getVisible().update(cond);
-                modernModule.getOffset().update(cond);
-                if (this.visibleCheck(modernModule)) continue;
-                modernModule.set(x + 127.0f + xOff, y + 33.0f + yOff, moduleWidth, 28.0f);
-                if (GuiUtility.isHovered((double)x, (double)(y - modernModule.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + modernModule.getHeight()), modernModule.getX(), modernModule.getY())) {
-                    modernModule.render(context);
-                    if (GuiUtility.isHovered(modernModule.getX(), modernModule.getY(), modernModule.getWidth(), modernModule.getHeight(), context)) {
-                        CursorUtility.set(CursorType.HAND);
-                    }
+        for (ModernModule modernModule : active.getModules()) {
+            modernModule.getVisible().update(true);
+            if (this.searchCheck(modernModule)) continue;
+            int col = 0;
+            for (int c = 1; c < columns; c++) {
+                if (colY[c] < colY[col]) {
+                    col = c;
                 }
-                if (!((xOff += (modernModule.getWidth() + 6.5f) * modernModule.getOffset().getValue()) > this.menuWindow.getWidth() - 139.0f)) continue;
-                yOff += 34.0f * modernModule.getOffset().getValue();
-                xOff = 0.0f;
             }
-            if (xOff != 0.0f) {
-                yOff += 34.0f;
+            float cardX = contentX + (float) col * (cardW + gap);
+            modernModule.set(cardX, colY[col], cardW, modernModule.fullHeight());
+            modernModule.render(context);
+            if (GuiUtility.isHovered(modernModule.getX(), modernModule.getY(), modernModule.getWidth(), ModernModule.HEADER, context)) {
+                CursorUtility.set(CursorType.HAND);
             }
-            xOff = 0.0f;
-            yOff += 25.0f;
-            if (modernCategory.getCategory() != MenuCategory.OTHER || !(yOff - prev < this.menuWindow.getHeight())) continue;
-            yOff = prev + this.menuWindow.getHeight();
+            colY[col] += modernModule.fullHeight() + gap;
         }
         squircleBatching.draw();
         RoundedRectBatching roundBatching = new RoundedRectBatching();
-        for (ModernCategory category : this.categories) {
-            for (ModernModule modernModule : category.getModules()) {
-                if (this.visibleCheck(modernModule) || !GuiUtility.isHovered((double)x, (double)(y - modernModule.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + modernModule.getHeight()), modernModule.getX(), modernModule.getY())) continue;
-                modernModule.renderRounds(context);
-            }
+        for (ModernModule modernModule : active.getModules()) {
+            if (this.searchCheck(modernModule)) continue;
+            modernModule.renderRounds(context);
         }
         roundBatching.draw();
         RoundedRectBatching roundedRectBatching = new RoundedRectBatching();
-        for (ModernCategory modernCategory : this.categories) {
-            for (ModernModule module : modernCategory.getModules()) {
-                if (this.visibleCheck(module) || !GuiUtility.isHovered((double)x, (double)(y - module.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + module.getHeight()), module.getX(), module.getY())) continue;
-                module.renderInto(context);
-            }
+        for (ModernModule module : active.getModules()) {
+            if (this.searchCheck(module)) continue;
+            module.renderInto(context);
         }
         roundedRectBatching.draw();
         FontBatching mediumBatching = new FontBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.MEDIUM);
-        for (ModernCategory modernCategory : this.categories) {
-            for (ModernModule modernModule : modernCategory.getModules()) {
-                if (this.visibleCheck(modernModule) || !GuiUtility.isHovered((double)x, (double)(y - modernModule.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + modernModule.getHeight()), modernModule.getX(), modernModule.getY())) continue;
-                modernModule.renderMedium(context);
-            }
+        for (ModernModule modernModule : active.getModules()) {
+            if (this.searchCheck(modernModule)) continue;
+            modernModule.renderMedium(context);
         }
         mediumBatching.draw();
-        FadeOutBatching fadeOutBatching = new FadeOutBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.REGULAR, 0.9f, 1.0f, moduleWidth - 30.0f, x + 127.0f);
-        for (ModernCategory category : this.categories) {
-            for (ModernModule modernModule : category.getModules()) {
-                if (this.visibleCheck(modernModule) || !GuiUtility.isHovered((double)x, (double)(y - modernModule.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + modernModule.getHeight()), modernModule.getX(), modernModule.getY()) || modernModule.getX() != x + 127.0f) continue;
-                modernModule.renderRegular(context);
-            }
+        // 2) inline settings — drawn with NO active batch (mixed primitives draw immediately)
+        for (ModernModule modernModule : active.getModules()) {
+            if (this.searchCheck(modernModule)) continue;
+            modernModule.renderSettings(context);
         }
-        fadeOutBatching.draw();
-        FadeOutBatching fadeOutBatching2 = new FadeOutBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.REGULAR, 0.9f, 1.0f, moduleWidth - 30.0f, x + 127.0f + moduleWidth + 6.5f);
-        for (ModernCategory modernCategory : this.categories) {
-            for (ModernModule modernModule : modernCategory.getModules()) {
-                if (this.visibleCheck(modernModule) || !GuiUtility.isHovered((double)x, (double)(y - modernModule.getHeight()), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + modernModule.getHeight()), modernModule.getX(), modernModule.getY()) || modernModule.getX() == x + 127.0f) continue;
-                modernModule.renderRegular(context);
-            }
+        float maxColY = colY[0];
+        for (int c = 1; c < columns; c++) {
+            maxColY = Math.max(maxColY, colY[c]);
         }
-        fadeOutBatching2.draw();
-        FontBatching fontBatching2 = new FontBatching(VertexFormats.POSITION_TEXTURE_COLOR, Fonts.SEMIBOLD);
-        for (ModernCategory modernCategory : this.categories) {
-            if (!GuiUtility.isHovered((double)x, (double)(y - 20.0f), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + 20.0f), x + 142.0f, y + 16.0f + modernCategory.getY())) continue;
-            context.drawText(Fonts.SEMIBOLD.getFont(12.0f), modernCategory.getCategory().getName(), x + 143.0f, y + 16.0f + modernCategory.getY(), Colors.getTextColor());
-        }
-        fontBatching2.draw();
-        IconBatching iconBatching2 = new IconBatching(VertexFormats.POSITION_TEXTURE_COLOR, context.getMatrices());
-        for (ModernCategory modernCategory : this.categories) {
-            if (!GuiUtility.isHovered((double)x, (double)(y - 20.0f), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + 20.0f), x + 142.0f, y + 16.0f + modernCategory.getY()) || modernCategory.getPenis() != null) continue;
-            context.drawSprite(modernCategory.getCategory().getBigMenuSprite(), x + 129.0f, y + 15.0f + modernCategory.getY(), 10.0f, 10.0f, Colors.getTextColor());
-        }
-        iconBatching2.draw();
-        IconBatching iconBatching3 = new IconBatching(VertexFormats.POSITION_TEXTURE_COLOR, context.getMatrices());
-        for (ModernCategory category : this.categories) {
-            if (!GuiUtility.isHovered((double)x, (double)(y - 20.0f), (double)this.menuWindow.getWidth(), (double)(this.menuWindow.getHeight() + 20.0f), x + 142.0f, y + 16.0f + category.getY()) || category.getPenis() == null) continue;
-            DrawUtility.drawAnimationSprite(context.getMatrices(), category.getPenis().getCurrentSprite(), x + 129.0f, y + 15.0f + category.getY(), 10.0f, 10.0f, Colors.getTextColor());
-        }
-        iconBatching3.draw();
-        float f2 = yOff - f;
-        float visibleHeight = this.menuWindow.getHeight() - 10.0f;
-        float maxScroll = -Math.max(0.0f, f2 - visibleHeight);
-        this.scrollHandler.setMax(maxScroll - 10.0f);
+        float used = maxColY - scroll - top;
+        float visibleHeight = this.menuWindow.getHeight() - TOP_BAR - 16.0f;
+        float maxScroll = -Math.max(0.0f, used - visibleHeight);
+        this.scrollHandler.setMax(maxScroll - 8.0f);
         ScissorUtility.pop();
         RenderUtility.end(context.getMatrices());
         RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)1.0f);
-        for (ModernSettings window2 : this.windows) {
-            window2.render(context);
-        }
+        this.renderThemeEditor(context, x, y, dark);
         for (ColorPicker colorPicker2 : this.colorPickers) {
             colorPicker2.render(context);
         }
-        this.windows.removeIf(window -> window.getAnimation().getValue() == 0.0f && !window.isShowing());
         this.colorPickers.removeIf(colorPicker -> colorPicker.getAnimation().getValue() == 0.0f && !colorPicker.isShowing());
         if (this.visualsModulesPopup != null) {
             this.visualsModulesPopup.render(context);
-            if (!(ModernScreen.mc.currentScreen instanceof ModernScreen) || !Interface.customSelected()) {
+            if (!(ModernScreen.mc.currentScreen instanceof ModernScreen) || !this.themeEditorOpen) {
                 this.visualsModulesPopup.setShowing(false);
             }
             if (this.visualsModulesPopup.getAnimation().getValue() == 0.0f && !this.visualsModulesPopup.isShowing()) {
@@ -370,7 +361,7 @@ IScaledResolution {
         }
         if (this.blurElementsPopup != null) {
             this.blurElementsPopup.render(context);
-            if (!(ModernScreen.mc.currentScreen instanceof ModernScreen) || !Interface.customSelected()) {
+            if (!(ModernScreen.mc.currentScreen instanceof ModernScreen) || !this.themeEditorOpen) {
                 this.blurElementsPopup.setShowing(false);
             }
             if (this.blurElementsPopup.getAnimation().getValue() == 0.0f && !this.blurElementsPopup.isShowing()) {
@@ -396,8 +387,9 @@ IScaledResolution {
         this.themeSliderCirclePicker = this.clearClosedPicker(this.themeSliderCirclePicker);
         this.themeSliderWindowPicker = this.clearClosedPicker(this.themeSliderWindowPicker);
         this.themeTooltipTextPicker = this.clearClosedPicker(this.themeTooltipTextPicker);
+        this.themeAutoPicker = this.clearClosedPicker(this.themeAutoPicker);
 
-        if (!Interface.customSelected()) {
+        if (!this.themeEditorOpen) {
             if (this.themeAccentPicker != null) {
                 this.themeAccentPicker.setShowing(false);
             }
@@ -498,13 +490,33 @@ IScaledResolution {
             Rockstar.getInstance().getThemeManager().setCustomTooltipTextColor(this.themeTooltipTextPicker.built());
         }
 
-        float x = menuX + 12.0f;
-        float width = 95.0f;
-        float rowHeight = 11.0f;
-        float titleY = menuY + 140.0f;
-        float startY = menuY + 150.0f;
+        float width = 134.0f;
+        float rowHeight = 13.0f;
+        float panelX = menuX + this.menuWindow.getWidth() + 10.0f;
+        float panelW = width + 16.0f;
+        float startY = menuY + 30.0f;
+        float panelH = 18.0f * rowHeight + 26.0f;
+        // separate side panel background
+        context.drawSquircle(panelX, menuY, panelW, panelH, 5.0f, BorderRadius.all(12.0f), dark ? Colors.getAdditionalColor().mulAlpha(0.98f) : Colors.getBackgroundColor().mulAlpha(0.95f));
+        context.drawRoundedBorder(panelX, menuY, panelW, panelH, 1.0f, BorderRadius.all(12.0f), Colors.getAccentColor().mulAlpha(0.12f));
+        float x = panelX + 8.0f;
 
-        context.drawText(Fonts.REGULAR.getFont(6.0f), Localizator.translate("theme_editor.title"), x + 2.0f, titleY, Colors.getHeaderTextColor().mulAlpha(0.3f));
+        context.drawText(Fonts.SEMIBOLD.getFont(7.5f), Localizator.translate("theme_editor.title"), x + 2.0f, menuY + 11.0f, Colors.getTextColor());
+
+        // ── Auto theme: pick a color -> derive the whole theme ──
+        if (this.themeAutoPicker != null) {
+            Rockstar.getInstance().getThemeManager().applyAutoTheme(this.themeAutoPicker.built());
+        }
+        float autoW = 44.0f;
+        float autoH = 12.0f;
+        float autoX = panelX + panelW - autoW - 6.0f;
+        float autoY = menuY + 5.0f;
+        boolean autoHover = GuiUtility.isHovered(autoX, autoY, autoW, autoH, context);
+        if (autoHover) {
+            CursorUtility.set(CursorType.HAND);
+        }
+        context.drawRoundedRect(autoX, autoY, autoW, autoH, BorderRadius.all(4.0f), Colors.getAccentColor().mulAlpha(autoHover ? 0.95f : 0.65f));
+        context.drawCenteredText(Fonts.MEDIUM.getFont(6.5f), Localizator.translate("theme_editor.auto"), autoX + autoW / 2.0f, autoY + (autoH - Fonts.MEDIUM.getFont(6.5f).height()) / 2.0f, Colors.WHITE);
 
         this.renderThemeEditorRow(context, x, startY + 0.0f * rowHeight, width, rowHeight, "theme_editor.accent", Rockstar.getInstance().getThemeManager().getCustomAccentColor(), dark);
         this.renderThemeEditorRow(context, x, startY + 1.0f * rowHeight, width, rowHeight, "theme_editor.background", Rockstar.getInstance().getThemeManager().getCustomBackgroundColor(), dark);
@@ -632,59 +644,85 @@ IScaledResolution {
         if (this.handleThemeEditorClick(mouseX, mouseY, button)) {
             return;
         }
-        for (ModernSettings window : this.windows) {
-            window.onMouseClicked(mouseX, mouseY, button);
-            if (window.isHovered(mouseX, mouseY)) {
-                return;
-            }
-            if (GuiUtility.isHovered(this.menuWindow, mouseX, mouseY)) continue;
-            boolean can = true;
-            for (ModernSettings window1 : this.windows) {
-                if (!GuiUtility.isHovered(window1, mouseX, mouseY)) continue;
-                can = false;
-            }
-            if (!can) continue;
-            window.setShowing(false);
-        }
         float x = this.menuWindow.getX();
         float y = this.menuWindow.getY();
-        float yOff = 0.0f;
-        for (ModernCategory category : this.categories) {
-            if (GuiUtility.isHovered((double)(x + 12.0f), (double)(y + 43.0f + yOff), 95.0, 16.0, mouseX, mouseY) && category.getCategory() != this.current) {
-                this.scrollHandler.scroll((-this.scrollHandler.getValue() - ((double)category.getY() - this.scrollHandler.getValue())) / 20.0);
+        float w = this.menuWindow.getWidth();
+        // theme editor toggle button
+        float fieldW = 108.0f;
+        float fieldX = x + w - 14.0f - fieldW;
+        float teSize = 13.0f;
+        float teX = fieldX - 10.0f - teSize;
+        float teY = y + (TOP_BAR - teSize) / 2.0f;
+        if (button == MouseButton.LEFT && GuiUtility.isHovered((double) teX, (double) teY, (double) teSize, (double) teSize, mouseX, mouseY)) {
+            this.themeEditorOpen = !this.themeEditorOpen;
+            if (this.themeEditorOpen) {
+                // opening the editor implies you want the custom theme active, otherwise edits don't apply
+                Rockstar.getInstance().getModuleManager().getModule(Interface.class).getCustom().select();
+            }
+            return;
+        }
+        // category tabs
+        int n = this.categories.size();
+        float tabsStart = x + w / 2.0f - (float)n * TAB_W / 2.0f;
+        for (int i = 0; i < n; ++i) {
+            ModernCategory category = this.categories.get(i);
+            float tx = tabsStart + (float)i * TAB_W;
+            if (GuiUtility.isHovered((double)tx, (double)y, (double)TAB_W, (double)TOP_BAR, mouseX, mouseY) && category.getCategory() != this.current) {
+                this.current = category.getCategory();
+                this.scrollHandler.setValue(0.0);
+                this.scrollHandler.scroll(0.0);
                 if (category.getPenis() != null) {
                     category.getPenis().playOnce();
                 }
                 return;
             }
-            yOff += 18.0f;
         }
-        for (ModernCategory category : this.categories) {
-            for (ModernModule module : category.getModules()) {
-                if (this.visibleCheck(module) || !GuiUtility.isHovered(this.menuWindow, mouseX, mouseY) && (button == MouseButton.LEFT || button == MouseButton.RIGHT) || !GuiUtility.isHovered((double)module.getX(), (double)module.getY(), (double)module.getWidth(), (double)module.getHeight(), mouseX, mouseY)) continue;
-                module.onMouseClicked(mouseX, mouseY, button);
-                return;
+        // search field lives in the top bar — handle it first so a scrolled-up card can't steal the click
+        if (mouseY <= y + TOP_BAR) {
+            if (button != MouseButton.MIDDLE) {
+                this.searchField.onMouseClicked(mouseX, mouseY, button);
             }
+            // drag the window only by the empty part of the top bar (not the search / theme button)
+            if (GuiUtility.isHovered(this.menuWindow, mouseX, mouseY) && mouseX < teX) {
+                this.drag = true;
+                this.dragX = (float)(mouseX - (double)this.menuWindow.getX());
+                this.dragY = (float)(mouseY - (double)this.menuWindow.getY());
+            }
+            super.onMouseClicked(mouseX, mouseY, button);
+            return;
         }
-        if (button != MouseButton.MIDDLE) {
-            this.searchField.onMouseClicked(mouseX, mouseY, button);
-        }
-        if (GuiUtility.isHovered(this.menuWindow, mouseX, mouseY)) {
-            this.drag = true;
-            this.dragX = (float)(mouseX - (double)this.menuWindow.getX());
-            this.dragY = (float)(mouseY - (double)this.menuWindow.getY());
+        // module cards in the active category (header click + inline settings) — content area only
+        for (ModernModule module : this.activeCategory().getModules()) {
+            if (this.searchCheck(module)) continue;
+            boolean overHeader = GuiUtility.isHovered((double)module.getX(), (double)module.getY(), (double)module.getWidth(), (double)ModernModule.HEADER, mouseX, mouseY);
+            boolean overCard = GuiUtility.isHovered((double)module.getX(), (double)module.getY(), (double)module.getWidth(), (double)module.getHeight(), mouseX, mouseY);
+            if (!overHeader && !(module.isExpanded() && overCard)) continue;
+            module.onMouseClicked(mouseX, mouseY, button);
+            return;
         }
         super.onMouseClicked(mouseX, mouseY, button);
     }
 
     private boolean handleThemeEditorClick(double mouseX, double mouseY, MouseButton button) {
-        if (!Interface.customSelected() || button != MouseButton.LEFT) {
+        if (!this.themeEditorOpen || button != MouseButton.LEFT) {
             return false;
         }
-        float x = this.menuWindow.getX() + 12.0f;
-        float width = 95.0f;
-        float height = 11.0f;
-        float startY = this.menuWindow.getY() + 150.0f;
+        // Auto-theme button
+        float panelX = this.menuWindow.getX() + this.menuWindow.getWidth() + 10.0f;
+        float panelW = 134.0f + 16.0f;
+        float autoW = 44.0f;
+        float autoX = panelX + panelW - autoW - 6.0f;
+        float autoY = this.menuWindow.getY() + 5.0f;
+        if (GuiUtility.isHovered((double) autoX, (double) autoY, (double) autoW, 12.0, mouseX, mouseY)) {
+            Rockstar.getInstance().getModuleManager().getModule(Interface.class).getCustom().select();
+            this.themeAutoPicker = new ColorPicker((float) mouseX, (float) mouseY, 6.0f, false, Rockstar.getInstance().getThemeManager().getCustomAccentColor(), Localizator.translate("theme_editor.auto"));
+            this.colorPickers.add(this.themeAutoPicker);
+            return true;
+        }
+        float x = this.menuWindow.getX() + this.menuWindow.getWidth() + 10.0f + 8.0f;
+        float width = 134.0f;
+        float height = 13.0f;
+        float startY = this.menuWindow.getY() + 30.0f;
         if (GuiUtility.isHovered((double)x, (double)(startY + 0.0f * height), (double)width, (double)height, mouseX, mouseY)) {
             this.themeAccentPicker = new ColorPicker((float)mouseX, (float)mouseY, 6.0f, true, Rockstar.getInstance().getThemeManager().getCustomAccentColor(), Localizator.translate("theme_editor.accent"));
             this.colorPickers.add(this.themeAccentPicker);
@@ -871,8 +909,9 @@ IScaledResolution {
         if (this.blurElementsPopup != null) {
             this.blurElementsPopup.onMouseReleased(mouseX, mouseY, button);
         }
-        for (ModernSettings window : this.windows) {
-            window.onMouseReleased(mouseX, mouseY, button);
+        for (ModernModule module : this.activeCategory().getModules()) {
+            if (this.searchCheck(module)) continue;
+            module.onMouseReleased(mouseX, mouseY, button);
         }
         for (ColorPicker colorPicker : this.colorPickers) {
             colorPicker.onMouseReleased(mouseX, mouseY, button);
@@ -890,9 +929,6 @@ IScaledResolution {
         }
         if (this.blurElementsPopup != null) {
             this.blurElementsPopup.onScroll(mouseX, mouseY, horizontalAmount, verticalAmount);
-        }
-        for (ModernSettings window : this.windows) {
-            window.onScroll(mouseX, mouseY, horizontalAmount, verticalAmount);
         }
         if (GuiUtility.isHovered(this.menuWindow, mouseX, mouseY)) {
             this.scrollHandler.scroll(verticalAmount);
@@ -912,20 +948,15 @@ IScaledResolution {
             this.searchField.setFocused(true);
         }
         this.scrollHandler.onKeyPressed(keyCode);
-        for (ModernSettings window : this.windows) {
-            window.onKeyPressed(keyCode, scanCode, modifiers);
-        }
         for (ColorPicker colorPicker : this.colorPickers) {
             colorPicker.onKeyPressed(keyCode, scanCode, modifiers);
         }
         if (this.searchField.isFocused() && !this.isBindingModule()) {
             this.searchField.onKeyPressed(keyCode, scanCode, modifiers);
         }
-        for (ModernCategory category : this.categories) {
-            for (ModernModule module : category.getModules()) {
-                if (this.visibleCheck(module)) continue;
-                module.onKeyPressed(keyCode, scanCode, modifiers);
-            }
+        for (ModernModule module : this.activeCategory().getModules()) {
+            if (this.searchCheck(module)) continue;
+            module.onKeyPressed(keyCode, scanCode, modifiers);
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
@@ -941,11 +972,9 @@ IScaledResolution {
         if (this.searchField.isFocused() && !this.isBindingModule()) {
             this.searchField.charTyped(chr, modifiers);
         }
-        for (ModernCategory category : this.categories) {
-            for (ModernModule module : category.getModules()) {
-                if (this.visibleCheck(module)) continue;
-                module.charTyped(chr, modifiers);
-            }
+        for (ModernModule module : this.activeCategory().getModules()) {
+            if (this.searchCheck(module)) continue;
+            module.charTyped(chr, modifiers);
         }
         return super.charTyped(chr, modifiers);
     }
@@ -973,12 +1002,13 @@ IScaledResolution {
         return search != null && !search.getBuiltText().isBlank() && !component.getModule().getName().toLowerCase().contains(search.getBuiltText().toLowerCase()) && !component.getModule().getName().replace(" ", "").toLowerCase().contains(search.getBuiltText().toLowerCase());
     }
 
-    private boolean visibleCheck(ModernModule component) {
-        return component.getOffset().getValue() == 0.0f || this.searchCheck(component);
-    }
-
-    private boolean opened(ModernModule component) {
-        return this.windows.stream().anyMatch(window -> window.getModule() == component);
+    private ModernCategory activeCategory() {
+        for (ModernCategory c : this.categories) {
+            if (c.getCategory() == this.current) {
+                return c;
+            }
+        }
+        return this.categories.get(0);
     }
 
     public boolean isBindingModule() {
@@ -1034,11 +1064,6 @@ IScaledResolution {
     @Generated
     public List<ModernCategory> getCategories() {
         return this.categories;
-    }
-
-    @Generated
-    public List<ModernSettings> getWindows() {
-        return this.windows;
     }
 
     @Generated

@@ -1,13 +1,3 @@
-/*
- * Decompiled with CFR 0.152.
- * 
- * Could not load the following classes:
- *  net.minecraft.client.MinecraftClient
- *  net.minecraft.client.gui.screen.Screen
- *  net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen
- *  net.minecraft.client.gui.screen.option.OptionsScreen
- *  net.minecraft.client.gui.screen.world.SelectWorldScreen
- */
 package moscow.rockstar.ui.mainmenu;
 
 import java.util.ArrayList;
@@ -22,108 +12,160 @@ import moscow.rockstar.framework.objects.MouseButton;
 import moscow.rockstar.framework.objects.gradient.impl.VerticalGradient;
 import moscow.rockstar.systems.localization.Localizator;
 import moscow.rockstar.systems.modules.modules.other.Sounds;
-import moscow.rockstar.ui.mainmenu.CustomButton;
+import moscow.rockstar.ui.hud.Glyphs;
+import moscow.rockstar.ui.mainmenu.alt.AltManagerScreen;
 import moscow.rockstar.utility.animation.base.Animation;
 import moscow.rockstar.utility.animation.base.Easing;
 import moscow.rockstar.utility.colors.ColorRGBA;
+import moscow.rockstar.utility.colors.Colors;
 import moscow.rockstar.utility.game.TextUtility;
+import moscow.rockstar.utility.game.cursor.CursorType;
+import moscow.rockstar.utility.game.cursor.CursorUtility;
+import moscow.rockstar.utility.gui.GuiUtility;
 import moscow.rockstar.utility.interfaces.IMinecraft;
-import moscow.rockstar.utility.math.MathUtility;
-import moscow.rockstar.utility.render.DrawUtility;
-import moscow.rockstar.utility.render.RenderUtility;
-import moscow.rockstar.utility.render.obj.Rect;
 import moscow.rockstar.utility.sounds.ClientSounds;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
 import net.minecraft.client.gui.screen.option.OptionsScreen;
 import net.minecraft.client.gui.screen.world.SelectWorldScreen;
-import ru.kotopushka.compiler.sdk.annotations.Compile;
-import ru.kotopushka.compiler.sdk.annotations.VMProtect;
-import ru.kotopushka.compiler.sdk.enums.VMProtectType;
 
-public class CustomTitleScreen
-extends CustomScreen
-implements IMinecraft {
-    private static boolean once;
-    private static final List<CustomButton> buttons;
-    private boolean active;
-    private final Animation activeAnimation = new Animation(1000L, 0.0f, Easing.FIGMA_EASE_IN_OUT);
-    private final ColorRGBA dateColor = new ColorRGBA(171.0f, 254.0f, 255.0f);
-    private final ColorRGBA timeColor = new ColorRGBA(203.0f, 254.0f, 255.0f);
+/**
+ * Redesigned main menu: a left sidebar card (brand + vertical nav) over a dark gradient with a faint
+ * Z watermark. Nav: Singleplayer / Multiplayer / Alts / Options / Quit. Theme-synced via {@link Colors}.
+ */
+public class CustomTitleScreen extends CustomScreen implements IMinecraft {
+    private static boolean welcomed;
 
-    @Compile
-    @VMProtect(type=VMProtectType.MUTATION)
+    private final List<Nav> navs = new ArrayList<>();
+
+    private static final class Nav {
+        final String labelKey;
+        final String icon;        // texture path, or null to use the person glyph
+        final Runnable action;
+        final Animation hover = new Animation(250L, 0.0f, Easing.FIGMA_EASE_IN_OUT);
+        float x, y, w, h;
+
+        Nav(String labelKey, String icon, Runnable action) {
+            this.labelKey = labelKey;
+            this.icon = icon;
+            this.action = action;
+        }
+    }
+
+    @Override
     protected void init() {
-        String basePath = "image/mainmenu/icons/";
-        if (!once) {
+        if (!welcomed) {
             if (Rockstar.getInstance().getModuleManager().getModule(Sounds.class).isEnabled()) {
                 ClientSounds.WELCOME.play(Rockstar.getInstance().getModuleManager().getModule(Sounds.class).getVolume().getCurrentValue());
             }
-            buttons.add(new CustomButton(basePath + "single.png", 12.0f, () -> mc.setScreen((Screen)new SelectWorldScreen((Screen)this))));
-            buttons.add(new CustomButton(basePath + "multi.png", 12.0f, () -> mc.setScreen((Screen)new MultiplayerScreen((Screen)this))));
-            buttons.add(new CustomButton(basePath + "settings.png", 12.0f, () -> mc.setScreen((Screen)new OptionsScreen((Screen)this, CustomTitleScreen.mc.options))));
-            buttons.add(new CustomButton(basePath + "quit.png", 14.0f, () -> ((MinecraftClient)mc).stop()));
-            once = true;
+            welcomed = true;
         }
+        this.navs.clear();
+        String base = "image/mainmenu/icons/";
+        this.navs.add(new Nav("mainmenu.singleplayer", base + "single.png", () -> mc.setScreen(new SelectWorldScreen(this))));
+        this.navs.add(new Nav("mainmenu.multiplayer", base + "multi.png", () -> mc.setScreen(new MultiplayerScreen(this))));
+        this.navs.add(new Nav("mainmenu.alts", null, () -> mc.setScreen(new AltManagerScreen(this))));
+        this.navs.add(new Nav("mainmenu.options", base + "settings.png", () -> mc.setScreen(new OptionsScreen(this, mc.options))));
+        this.navs.add(new Nav("mainmenu.quit", base + "quit.png", () -> ((MinecraftClient) mc).stop()));
         super.init();
     }
 
     @Override
     public void render(UIContext context) {
-        Font timeFont = Fonts.ROUND_BOLD.getFont(65.0f);
-        Font dateFont = Fonts.MEDIUM.getFont(16.0f);
-        Font unlockFont = Fonts.REGULAR.getFont(10.0f);
-        float textAlpha = 255.0f * (0.5f + 0.5f * this.activeAnimation.getValue());
-        float timeOffset = MathUtility.interpolate((float)this.height / 2.0f - 20.0f, 80.0, this.activeAnimation.getValue());
-        Rect rect = new Rect((float)(-this.width) / 2.0f, (float)(-this.width) / 3.0f, (float)this.width * 1.5f, this.width);
-        this.activeAnimation.update(this.active);
-        context.drawRoundedRect(0.0f, 0.0f, (float)this.width, (float)this.height, BorderRadius.ZERO, new VerticalGradient(new ColorRGBA(26.0f, 34.0f, 56.0f), new ColorRGBA(5.0f, 3.0f, 12.0f)));
-        RenderUtility.scale(context.getMatrices(), (float)this.width / 2.0f, (float)this.height / 2.0f, 1.1f - 0.1f * this.activeAnimation.getValue());
-        context.drawTexture(Rockstar.id("image/mainmenu/background.png"), rect.getX(), rect.getY(), rect.getWidth(), rect.getHeight());
-        RenderUtility.end(context.getMatrices());
-        context.drawCenteredText(dateFont, TextUtility.getFormattedDate(), (float)this.width / 2.0f, timeOffset - 23.0f, ColorRGBA.WHITE.withAlpha(textAlpha));
-        context.drawCenteredText(timeFont, TextUtility.getCurrentTime(), (float)this.width / 2.0f, timeOffset, ColorRGBA.WHITE.withAlpha(textAlpha));
-        context.drawRoundedRect((float)this.width / 2.0f - 36.0f, (float)(this.height - 5) - 3.0f * this.activeAnimation.getValue(), 72.0f, 3.0f, BorderRadius.all(1.0f), ColorRGBA.WHITE.withAlpha(255.0f * this.activeAnimation.getValue()));
-        context.drawCenteredText(unlockFont, Localizator.translate("mainmenu.next"), (float)this.width / 2.0f, (float)(this.height - 15) + 3.0f * this.activeAnimation.getValue(), ColorRGBA.WHITE.withAlpha(155.0f * (1.0f - this.activeAnimation.getValue())));
-        DrawUtility.blurProgram.draw();
-        float offset = 0.0f;
-        for (CustomButton button : buttons) {
-            button.getActiveAnim().update((float)(buttons.size() - buttons.indexOf(button)) > (1.0f - this.activeAnimation.getValue()) * (float)buttons.size() + 0.5f);
-            button.set((float)this.width / 2.0f - 69.0f + offset, (this.height > 500 ? (float)this.height / 2.0f : (float)this.height / 1.25f) - 5.0f - 10.0f * button.getActiveAnim().getValue(), 30.0f, 30.0f);
-            offset += button.getWidth() + 6.0f;
-            button.draw(context);
+        float mx = context.getMouseX();
+        float my = context.getMouseY();
+        ColorRGBA accent = Colors.getAccentColor();
+
+        // background
+        context.drawRoundedRect(0.0f, 0.0f, this.width, this.height, BorderRadius.ZERO,
+                new VerticalGradient(new ColorRGBA(24.0f, 26.0f, 38.0f), new ColorRGBA(6.0f, 5.0f, 12.0f)));
+        // faint brand watermark on the right
+        Glyphs.zLogo(context, this.width * 0.66f, this.height / 2.0f - 110.0f, 220.0f, accent.mulAlpha(0.06f));
+
+        // sidebar card
+        float px = 26.0f;
+        float py = 26.0f;
+        float pw = 214.0f;
+        float ph = this.height - 52.0f;
+        Glyphs.background(context, px, py, pw, ph, 12.0f, 1.0f);
+        context.drawRoundedBorder(px, py, pw, ph, 1.0f, BorderRadius.all(12.0f), accent.mulAlpha(0.22f));
+
+        // brand
+        Glyphs.zLogo(context, px + 18.0f, py + 19.0f, 20.0f, accent);
+        context.drawText(Fonts.SEMIBOLD.getFont(14.0f), "RockReady", px + 46.0f, py + 17.0f, Colors.getTextColor());
+        context.drawText(Fonts.MEDIUM.getFont(7.0f), "v2.0 • cracked", px + 46.0f, py + 33.0f, Colors.getTextColor().mulAlpha(0.45f));
+        context.drawRect(px + 16.0f, py + 52.0f, pw - 32.0f, 0.6f, Glyphs.divider(1.0f));
+
+        // nav rows
+        Font label = Fonts.MEDIUM.getFont(9.0f);
+        float rowH = 36.0f;
+        float ny = py + 66.0f;
+        for (Nav nav : this.navs) {
+            nav.x = px + 12.0f;
+            nav.y = ny;
+            nav.w = pw - 24.0f;
+            nav.h = rowH - 4.0f;
+            boolean hovered = GuiUtility.isHovered((double) nav.x, (double) nav.y, (double) nav.w, (double) nav.h, (double) mx, (double) my);
+            nav.hover.update(hovered ? 1.0f : 0.0f);
+            float hv = nav.hover.getValue();
+
+            context.drawRoundedRect(nav.x, nav.y, nav.w, nav.h, BorderRadius.all(7.0f), accent.mulAlpha(0.12f * hv));
+            // animated accent bar
+            float barH = 6.0f + 12.0f * hv;
+            context.drawRoundedRect(nav.x + 2.0f, nav.y + (nav.h - barH) / 2.0f, 2.5f, barH, BorderRadius.all(1.25f), accent.mulAlpha(0.25f + 0.75f * hv));
+            // icon
+            ColorRGBA iconColor = Colors.getTextColor().mulAlpha(0.7f + 0.3f * hv);
+            if (nav.icon != null) {
+                context.drawTexture(Rockstar.id(nav.icon), nav.x + 14.0f, nav.y + (nav.h - 14.0f) / 2.0f, 14.0f, 14.0f, iconColor);
+            } else {
+                Glyphs.person(context, nav.x + 14.0f, nav.y + (nav.h - 13.0f) / 2.0f, 13.0f, iconColor);
+            }
+            context.drawText(label, Localizator.translate(nav.labelKey), nav.x + 38.0f, nav.y + (nav.h - label.height()) / 2.0f, Colors.getTextColor().withAlpha(255.0f * (0.75f + 0.25f * hv)));
+            if (hovered) {
+                CursorUtility.set(CursorType.HAND);
+            }
+            ny += rowH;
         }
+
+        // footer: account + clock
+        float footY = py + ph - 40.0f;
+        context.drawRect(px + 16.0f, footY, pw - 32.0f, 0.6f, Glyphs.divider(1.0f));
+        Glyphs.person(context, px + 16.0f, footY + 12.0f, 11.0f, accent);
+        context.drawText(Fonts.MEDIUM.getFont(8.0f), mc.getSession().getUsername(), px + 32.0f, footY + 12.0f, Colors.getTextColor());
+        context.drawRightText(Fonts.MEDIUM.getFont(7.5f), TextUtility.getCurrentTime(), px + pw - 16.0f, footY + 13.0f, Colors.getTextColor().mulAlpha(0.55f));
+
         if (this.shouldShowIsland()) {
             Rockstar.getInstance().getHud().getIsland().render(context);
         }
     }
 
     @Override
-    @Compile
     public void onMouseClicked(double mouseX, double mouseY, MouseButton button) {
-        if (this.shouldShowIsland() && Rockstar.getInstance().getHud().getIsland().handleClick((float)mouseX, (float)mouseY, button.getButtonIndex())) {
+        if (this.shouldShowIsland() && Rockstar.getInstance().getHud().getIsland().handleClick((float) mouseX, (float) mouseY, button.getButtonIndex())) {
             return;
         }
-        for (CustomButton customButton : buttons) {
-            if (!customButton.hovered(mouseX, mouseY) || customButton.getActiveAnim().getValue() != 1.0f) continue;
-            customButton.click(mouseX, mouseY, button.getButtonIndex());
-            return;
+        if (button == MouseButton.LEFT) {
+            for (Nav nav : this.navs) {
+                if (GuiUtility.isHovered((double) nav.x, (double) nav.y, (double) nav.w, (double) nav.h, mouseX, mouseY)) {
+                    nav.action.run();
+                    return;
+                }
+            }
         }
-        this.active = !this.active;
         super.onMouseClicked(mouseX, mouseY, button);
     }
 
-    @Compile
+    @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == 69) {
             Rockstar.getInstance().getThemeManager().switchTheme();
         }
         if (Screen.hasControlDown() && keyCode == 82) {
-            MinecraftClient.getInstance().setScreen((Screen)new MultiplayerScreen((Screen)this));
+            mc.setScreen(new MultiplayerScreen(this));
         }
         if (Screen.hasControlDown() && keyCode == 84) {
-            MinecraftClient.getInstance().setScreen((Screen)new SelectWorldScreen((Screen)this));
+            mc.setScreen(new SelectWorldScreen(this));
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
@@ -132,12 +174,8 @@ implements IMinecraft {
         return Rockstar.getInstance().getMusicTracker().haveActiveSession();
     }
 
+    @Override
     public boolean shouldCloseOnEsc() {
         return false;
     }
-
-    static {
-        buttons = new ArrayList<CustomButton>();
-    }
 }
-

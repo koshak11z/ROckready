@@ -207,6 +207,11 @@ extends BaseModule {
     }
 
     @Generated
+    public ModeSetting.Value getCustom() {
+        return this.custom;
+    }
+
+    @Generated
     public ModeSetting getThemeMode() {
         return this.themeMode;
     }

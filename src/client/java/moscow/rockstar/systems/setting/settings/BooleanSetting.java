@@ -22,6 +22,7 @@ public class BooleanSetting
 extends AbstractSetting
 implements Toggleable {
     private boolean enabled;
+    private boolean defaultEnabled;
 
     public BooleanSetting(@NotNull SettingsContainer parent, String name, String description, @NotNull BooleanSupplier hideCondition) {
         super(parent, name, hideCondition);
@@ -41,12 +42,19 @@ implements Toggleable {
 
     public BooleanSetting enabled(boolean enabled) {
         this.enabled = enabled;
+        this.defaultEnabled = enabled;
         return this;
     }
 
     public BooleanSetting enable() {
         this.enabled = true;
+        this.defaultEnabled = true;
         return this;
+    }
+
+    @Override
+    public void resetDefault() {
+        this.enabled = this.defaultEnabled;
     }
 
     @Override

@@ -15,12 +15,17 @@
  */
 package moscow.rockstar.mixin.minecraft.client.gui.overlay;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.mojang.blaze3d.systems.RenderSystem;
 import moscow.rockstar.Rockstar;
+import moscow.rockstar.utility.render.ScissorUtility;
 import moscow.rockstar.framework.base.CustomDrawContext;
 import moscow.rockstar.systems.event.impl.render.HudRenderEvent;
 import moscow.rockstar.systems.event.impl.render.PostHudRenderEvent;
 import moscow.rockstar.systems.event.impl.render.PreHudRenderEvent;
 import moscow.rockstar.systems.modules.modules.visuals.Removals;
+import moscow.rockstar.ui.hud.impl.VanillaHudElement;
 import moscow.rockstar.utility.game.server.ServerUtility;
 import moscow.rockstar.utility.interfaces.IMinecraft;
 import moscow.rockstar.utility.render.DrawUtility;
@@ -29,6 +34,7 @@ import net.minecraft.client.gui.hud.InGameHud;
 import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
@@ -82,11 +88,57 @@ implements IMinecraft {
         Rockstar.getInstance().getEventManager().triggerEvent(new PostHudRenderEvent(customDrawContext, tickCounter.getTickDelta(false)));
     }
 
+    // Defensive: clear any scissor/shader-color leaked by the custom HUD (previous frame) or by HUD
+    // event listeners BEFORE vanilla draws health/food/xp. A leaked scissor clips the whole screen,
+    // which is what made the vanilla bars "disappear at random".
+    @Inject(method={"renderMainHud"}, at={@At(value="HEAD")})
+    private void rockstar$resetHudState(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
+        ScissorUtility.clear();
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
     @Inject(method={"renderMainHud"}, at={@At(value="TAIL")})
     private void triggerHudRenderEvent(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         CustomDrawContext customDrawContext = CustomDrawContext.of(context);
         DrawUtility.blurProgram.draw();
         Rockstar.getInstance().getEventManager().triggerEvent(new HudRenderEvent(customDrawContext, tickCounter.getTickDelta(false)));
+    }
+
+    // ─── movable vanilla HUD: translate each element by its drag offset ───
+    @Unique
+    private void rockstar$wrap(DrawContext context, VanillaHudElement.Type type, Runnable original) {
+        float dx = VanillaHudElement.offsetX(type);
+        float dy = VanillaHudElement.offsetY(type);
+        boolean translated = dx != 0.0f || dy != 0.0f;
+        if (translated) {
+            context.getMatrices().push();
+            context.getMatrices().translate(dx, dy, 0.0f);
+        }
+        try {
+            original.run();
+        } catch (Throwable ignored) {
+            // CRITICAL: never let a transient vanilla render error (e.g. during a dimension/anka
+            // switch or a rapid PvP update) propagate out of renderMainHud. If it did, the rest of
+            // renderMainHud — including the health/food/xp status bars — would be skipped, which is
+            // exactly the "hearts disappear when switching ankas / in PvP" bug.
+        } finally {
+            if (translated) {
+                context.getMatrices().pop();
+            }
+        }
+    }
+
+    @WrapMethod(method="renderHotbar")
+    private void rockstar$moveHotbar(DrawContext context, RenderTickCounter tickCounter, Operation<Void> original) {
+        this.rockstar$wrap(context, VanillaHudElement.Type.HOTBAR, () -> original.call(context, tickCounter));
+    }
+
+    // NOTE: health / food / experience are intentionally NOT wrapped — wrapping those vanilla
+    // status-bar renders made them vanish at random on this toolchain. They now render purely vanilla.
+
+    @WrapMethod(method="renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;Lnet/minecraft/scoreboard/ScoreboardObjective;)V")
+    private void rockstar$moveScoreboard(DrawContext context, ScoreboardObjective objective, Operation<Void> original) {
+        this.rockstar$wrap(context, VanillaHudElement.Type.SCOREBOARD, () -> original.call(context, objective));
     }
 }
 

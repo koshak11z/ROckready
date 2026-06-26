@@ -26,6 +26,7 @@ extends AbstractSetting {
     protected float max;
     protected float step;
     protected float currentValue;
+    private Float defaultValue = null;
     private Suffix suffix = number -> "";
 
     public SliderSetting(@NotNull SettingsContainer parent, String name, String description, @NotNull BooleanSupplier hideCondition) {
@@ -70,8 +71,17 @@ extends AbstractSetting {
     }
 
     public SliderSetting currentValue(float currentValue) {
+        // Первое значение из билдера запоминаем как рекомендованное (для сброса по СКМ).
+        if (this.defaultValue == null) {
+            this.defaultValue = currentValue;
+        }
         this.setCurrentValue(currentValue);
         return this;
+    }
+
+    @Override
+    public void resetDefault() {
+        this.setCurrentValue(this.defaultValue != null ? this.defaultValue : this.min);
     }
 
     public String getSuffix() {

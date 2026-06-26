@@ -49,30 +49,25 @@ implements IMinecraft {
             this.currentState = ItemUseState.IDLE;
             return;
         }
-        if (!(this.targetSlot instanceof HotbarSlot)) {
-            Rockstar.getInstance().getModuleManager().getModule(GuiMove.class).setStay(true);
-        }
         switch (this.currentState.ordinal()) {
             case 1: {
-                if (this.targetSlot instanceof HotbarSlot) {
-                    SwapIntegration.mc.interactionManager.sendSequencedPacket(SwapIntegration.mc.world, sequence -> new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, sequence, SwapIntegration.mc.player.getYaw(), SwapIntegration.mc.player.getPitch()));
-                    this.currentState = ItemUseState.RETURNING_SLOT;
-                    break;
-                }
-                if (!Rockstar.getInstance().getModuleManager().getModule(GuiMove.class).canSend()) break;
-                SwapIntegration.mc.interactionManager.sendSequencedPacket(SwapIntegration.mc.world, sequence -> new PlayerInteractItemC2SPacket(Hand.MAIN_HAND, sequence, SwapIntegration.mc.player.getYaw(), SwapIntegration.mc.player.getPitch()));
+                // Wait a beat after the item is in hand so the server registers it, then actually USE
+                // it via interactItem (proper client+server use). Own 100ms timer — NO dependency on
+                // GuiMove and NOT reset by movement, so it throws WHILE MOVING ("на ходу").
+                if (!this.itemUseTimer.finished(100L)) break;
+                SwapIntegration.mc.interactionManager.interactItem(SwapIntegration.mc.player, Hand.MAIN_HAND);
+                this.itemUseTimer.reset();
                 this.currentState = ItemUseState.RETURNING_SLOT;
                 break;
             }
             case 2: {
+                // Let the use register before pulling the item back out of hand.
+                if (!this.itemUseTimer.finished(100L)) break;
                 if (this.targetSlot instanceof HotbarSlot) {
                     InventoryUtility.selectHotbarSlot(this.originalSlot);
-                    this.resetUseState();
-                    break;
+                } else {
+                    InventoryUtility.hotbarSwap(this.targetSlot.getIdForServer(), this.originalSlot.getSlotId());
                 }
-                if (!Rockstar.getInstance().getModuleManager().getModule(GuiMove.class).canSend()) break;
-                HotbarSlot currentSlot = InventoryUtility.getCurrentHotbarSlot();
-                InventoryUtility.hotbarSwap(this.targetSlot.getIdForServer(), this.originalSlot.getSlotId());
                 this.resetUseState();
                 break;
             }

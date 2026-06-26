@@ -34,9 +34,12 @@ import moscow.rockstar.systems.modules.impl.BaseModule;
 import moscow.rockstar.systems.setting.SettingsContainer;
 import moscow.rockstar.systems.setting.settings.BooleanSetting;
 import moscow.rockstar.systems.setting.settings.SelectSetting;
+import moscow.rockstar.systems.setting.settings.SliderSetting;
 import moscow.rockstar.systems.target.TargetSettings;
+import moscow.rockstar.ui.hud.Glyphs;
 import moscow.rockstar.utility.animation.base.Animation;
 import moscow.rockstar.utility.animation.base.Easing;
+import moscow.rockstar.utility.colors.ColorRGBA;
 import moscow.rockstar.utility.colors.Colors;
 import moscow.rockstar.utility.render.Draw3DUtility;
 import moscow.rockstar.utility.render.RenderUtility;
@@ -56,7 +59,10 @@ import net.minecraft.util.math.Vec3d;
 @ModuleInfo(name="Arrows", category=ModuleCategory.VISUALS, desc="modules.descriptions.tracers")
 public class Arrows
 extends BaseModule {
+    private static final ColorRGBA ARROW_PINK = new ColorRGBA(226.0f, 94.0f, 233.0f);
     private final BooleanSetting lines = new BooleanSetting(this, "lines");
+    private final SliderSetting size = new SliderSetting(this, "modules.settings.tracers.size",
+            () -> this.lines.isEnabled()).min(0.5f).max(2.5f).step(0.05f).currentValue(1.0f);
     private final SelectSetting targets = new SelectSetting((SettingsContainer)this, "modules.settings.tracers.targets", "modules.settings.tracers.targets.description");
     private final SelectSetting.Value players = new SelectSetting.Value(this.targets, "modules.settings.tracers.targets.players").select();
     private final SelectSetting.Value animals = new SelectSetting.Value(this.targets, "modules.settings.tracers.targets.animals");
@@ -98,7 +104,13 @@ extends BaseModule {
             if (!(arrow.getValue().showing.getValue() > 0.0f)) continue;
             RenderUtility.rotate(ms, 0.0f, 0.0f, this.calculateAngle(arrow.getKey(), event.getTickDelta()));
             RenderUtility.scale(ms, 0.0f, 0.0f, 2.0f - arrow.getValue().showing.getValue());
-            context.drawTexture(Rockstar.id("textures/arrow.png"), -10.0f, 40.0f, 20.0f, 20.0f, (Rockstar.getInstance().getFriendManager().isFriend(arrow.getKey().getName().getString()) ? Colors.GREEN : Colors.ACCENT).mulAlpha(arrow.getValue().showing.getValue()));
+            float show = arrow.getValue().showing.getValue();
+            boolean friend = Rockstar.getInstance().getFriendManager().isFriend(arrow.getKey().getName().getString());
+            ColorRGBA col = friend ? Colors.GREEN : ARROW_PINK;
+            float sz = this.size.getCurrentValue();
+            // soft glow + crisp rounded chevron (additive blend gives it the reference's glow)
+            Glyphs.arrow(context, 0.0f, 47.0f * sz, 16.0f * sz, 11.0f * sz, 5.5f * sz, col.mulAlpha(show * 0.35f));
+            Glyphs.arrow(context, 0.0f, 47.0f * sz, 13.0f * sz, 9.0f * sz, 3.0f * sz, col.mulAlpha(show));
             RenderUtility.end(ms);
             RenderUtility.end(ms);
         }

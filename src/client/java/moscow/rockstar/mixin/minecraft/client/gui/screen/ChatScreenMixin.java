@@ -19,6 +19,7 @@ package moscow.rockstar.mixin.minecraft.client.gui.screen;
 
 import baritone.api.BaritoneAPI;
 import moscow.rockstar.Rockstar;
+import moscow.rockstar.systems.commands.commands.ConfigCommand;
 import moscow.rockstar.framework.base.CustomDrawContext;
 import moscow.rockstar.systems.event.impl.render.ChatRenderEvent;
 import moscow.rockstar.systems.event.impl.window.ChatClickEvent;
@@ -52,6 +53,11 @@ implements IMinecraft {
 
     @Inject(method={"sendMessage(Ljava/lang/String;Z)V"}, at={@At(value="HEAD")}, cancellable=true)
     private void onSendMessage(String text, boolean addToHistory, CallbackInfo ci) {
+        if (ConfigCommand.isAwaitingReset() && ConfigCommand.tryConfirm(text)) {
+            ChatScreenMixin.mc.inGameHud.getChatHud().addToMessageHistory(text);
+            ci.cancel();
+            return;
+        }
         if (text != null && text.startsWith("#")) {
             try {
                 String command = text.substring(1).trim();

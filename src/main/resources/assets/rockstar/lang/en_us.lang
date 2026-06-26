@@ -22,6 +22,8 @@ modules.descriptions.spider=Allows you to climb walls
 modules.descriptions.menu=Client features menu
 modules.descriptions.name_tags=Show nametags ahead of entity with some data
 modules.descriptions.ambience=Changes the world's ambiance
+modules.descriptions.full_bright=Full world brightness
+modules.descriptions.worldcolor=Tints the world with a chosen color
 modules.descriptions.swing_animation=Changes hand swing animations
 modules.descriptions.sound_esp=Shows where a trident or TNT sound was played
 modules.descriptions.arrows=Displays direction to entities
@@ -131,7 +133,34 @@ modules.settings.aura.rotationMode=Rotation
 modules.settings.aura.rotationMode.description=Rotation mode to the target
 modules.settings.aura.noRotation=None
 modules.settings.aura.simpleRotation=Simple
+modules.settings.aura.customRotation=Custom
 modules.settings.aura.aiRotation=AI
+modules.settings.aura.custom.smoothing=Smoothing
+modules.settings.aura.custom.smoothness=Smoothness
+modules.settings.aura.custom.shake=Shake
+modules.settings.aura.custom.sticky=Sticky
+modules.settings.aura.custom.rotationSpeed=Rotation Speed
+modules.settings.aura.custom.hitAngle=Hit Angle
+modules.settings.aura.custom.hitAngleMode=Hit Angle Mode
+modules.settings.aura.custom.angleSmooth=Smooth
+modules.settings.aura.custom.angleSnap=Snap
+modules.settings.aura.custom.yBlend=Vertical Aim
+modules.settings.aura.custom.noiseScale=Shake Power
+modules.settings.aura.custom.idleYaw=Idle Yaw Offset
+modules.settings.aura.custom.idlePitch=Idle Pitch Offset
+modules.settings.aura.custom.maxYawStep=Max Yaw Step
+modules.settings.aura.custom.maxPitchStep=Max Pitch Step
+modules.settings.aura.custom.accel=Acceleration
+modules.settings.aura.custom.randomization=Randomization
+modules.settings.aura.custom.returnSpeed=Return Speed
+modules.settings.aura.custom.pitchClamp=Pitch Limit
+modules.settings.aura.custom.predict=Prediction
+modules.settings.aura.custom.predictStrength=Prediction Strength
+modules.settings.aura.custom.keepRotation=Keep Rotation
+modules.settings.aura.sprintReset=Sprint Reset
+modules.settings.aura.sprintReset.mode1=Mode 1
+modules.settings.aura.sprintReset.mode2=Mode 2
+modules.settings.aura.sprintReset.time=Reset Time
 modules.settings.aura.moveCorrectionMode=Move Correction
 modules.settings.aura.moveCorrectionMode.description=Required to bypass strict anticheats
 modules.settings.aura.noMoveCorrection=None
@@ -338,6 +367,11 @@ hud.keybinds=Key Binds
 
 hud.always_display=Always display
 
+# > Armor HUD
+hud.armor=Armor
+hud.armor.durability=Durability
+hud.armor.main_hand=Main hand item
+
 # > Эффект
 hud.effects=Effects
 hud.effects.alert=End alert
@@ -351,6 +385,20 @@ hud.targethud.armor.description=Choose how the armor is displayed
 hud.targethud.armor.none=None
 hud.targethud.armor.number=Durability Percent
 hud.targethud.armor.icon=Icons
+hud.targethud.effects=Target effects
+hud.targethud.buffs=Target buffs (list)
+hud.watermark=Watermark
+hud.watermark.nick=Nick
+hud.watermark.ping=Ping
+hud.watermark.fps=FPS
+hud.watermark.time=Time
+hud.watermark.server=Server
+hud.vanilla.scoreboard=Scoreboard
+hud.vanilla.bossbar=Boss Bar
+hud.vanilla.hotbar=Hotbar
+hud.vanilla.health=Health
+hud.vanilla.hunger=Hunger
+hud.vanilla.xp=XP
 
 # > Динамик остров
 hud.dynamic_island=Dynamic Island
@@ -391,6 +439,11 @@ block=block
 
 # мейнменю
 mainmenu.next=Click to continue
+mainmenu.singleplayer=Singleplayer
+mainmenu.multiplayer=Multiplayer
+mainmenu.alts=Alts
+mainmenu.options=Options
+mainmenu.quit=Quit
 
 # Days of the week
 time.days.monday=Monday
@@ -432,6 +485,7 @@ search.tooltip.enter=Enter - Toggle
 menu.binding=Press any key
 
 theme_editor.title=Theme Editor
+theme_editor.auto=Auto Theme
 theme_editor.accent=Accent
 theme_editor.background=Background
 theme_editor.additional=Additional
@@ -745,6 +799,7 @@ modules.settings.storage_esp.connect.description=Merges adjacent blocks when ren
 modules.tnt_timer.format=%.1f s
 
 # Tracers
+modules.settings.tracers.size=Size
 modules.settings.tracers.targets=Targets
 modules.settings.tracers.targets.description=Targets to draw lines to
 modules.settings.tracers.targets.players=Players
@@ -759,6 +814,9 @@ modules.settings.ambience.end_sky=Change sky
 modules.settings.ambience.custom_time=Change time
 modules.settings.ambience.time=Time
 modules.settings.ambience.bright=Enable brightness
+modules.settings.full_bright.level=Brightness level
+modules.settings.worldcolor.opacity=Opacity
+modules.settings.worldcolor.ignore_screens=Skip menus
 
 # Menu
 modules.settings.menu.mode=Mode
@@ -806,3 +864,11 @@ modules.settings.auto_explosion.delay=Delay
 inventory.button.drop_all=Drop all
 
 lines=Lines
+
+modules.settings.aura.funtimeTest=FunTime test
+modules.settings.aura.tpsSync=TPS sync
+modules.settings.auto_potion.potions.heal_health=Heal health
+modules.settings.auto_totem.death_tnt=Death TNT
+modules.settings.auto_totem.select_with.tnt=TNT
+modules.settings.flight.levitationBoost=Levitation boost
+modules.settings.noslow.snow=Snow

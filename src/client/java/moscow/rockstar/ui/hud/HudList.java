@@ -38,10 +38,15 @@ extends HudElement {
         RenderUtility.scale(context.getMatrices(), this.x + this.width / 2.0f, this.y + this.height / 2.0f, scale);
         context.drawShadow(this.x - 5.0f, this.y - 5.0f, this.width + 10.0f, this.height + 10.0f, 15.0f, BorderRadius.all(6.0f), ColorRGBA.BLACK.withAlpha(63.75f * this.dragAnim.getValue()));
         ScissorUtility.push(context.getMatrices(), this.x, this.y, this.width, Math.max(20.0f, this.height));
-        this.renderComponent(context);
-        ScissorUtility.pop();
-        RenderUtility.end(context.getMatrices());
-        RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)1.0f);
+        try {
+            this.renderComponent(context);
+        } finally {
+            // Always release the scissor/matrix/shader state — a throw here would otherwise leave the
+            // GL scissor enabled and clip the whole screen (hiding the vanilla health/food/xp HUD).
+            ScissorUtility.pop();
+            RenderUtility.end(context.getMatrices());
+            RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)1.0f);
+        }
     }
 
     @Override

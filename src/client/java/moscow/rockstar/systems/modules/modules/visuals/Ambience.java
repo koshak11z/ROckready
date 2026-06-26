@@ -25,7 +25,6 @@ extends BaseModule {
     public final BooleanSetting endSky = new BooleanSetting(this, "modules.settings.ambience.end_sky");
     private final BooleanSetting customTime = new BooleanSetting(this, "modules.settings.ambience.custom_time");
     private final SliderSetting time = new SliderSetting((SettingsContainer)this, "modules.settings.ambience.time", () -> !this.customTime.isEnabled()).step(1000.0f).min(0.0f).max(24000.0f).currentValue(12000.0f);
-    public final BooleanSetting bright = new BooleanSetting(this, "modules.settings.ambience.bright").enable();
     private long oldTime;
     private final EventListener<ReceivePacketEvent> onReceivePacket = event -> {
         if (event.getPacket() instanceof WorldTimeUpdateS2CPacket && this.customTime.isEnabled()) {
@@ -75,11 +74,6 @@ extends BaseModule {
     @Generated
     public SliderSetting getTime() {
         return this.time;
-    }
-
-    @Generated
-    public BooleanSetting getBright() {
-        return this.bright;
     }
 
     @Generated

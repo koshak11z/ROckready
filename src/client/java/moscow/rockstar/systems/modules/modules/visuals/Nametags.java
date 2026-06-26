@@ -31,7 +31,9 @@ import java.util.List;
 import lombok.Generated;
 import moscow.rockstar.Rockstar;
 import moscow.rockstar.framework.base.UIContext;
+import moscow.rockstar.framework.msdf.Font;
 import moscow.rockstar.framework.msdf.Fonts;
+import moscow.rockstar.framework.objects.BorderRadius;
 import moscow.rockstar.framework.objects.MouseButton;
 import moscow.rockstar.systems.event.EventListener;
 import moscow.rockstar.systems.event.impl.render.ChatRenderEvent;
@@ -47,7 +49,9 @@ import moscow.rockstar.systems.setting.SettingsContainer;
 import moscow.rockstar.systems.setting.settings.BooleanSetting;
 import moscow.rockstar.systems.target.TargetManager;
 import moscow.rockstar.ui.components.popup.Popup;
+import moscow.rockstar.ui.hud.Glyphs;
 import moscow.rockstar.utility.colors.ColorRGBA;
+import moscow.rockstar.utility.colors.Colors;
 import moscow.rockstar.utility.game.EntityUtility;
 import moscow.rockstar.utility.game.ItemUtility;
 import moscow.rockstar.utility.game.TextUtility;
@@ -77,7 +81,7 @@ import net.minecraft.util.math.Vec3d;
 public class Nametags
 extends BaseModule {
     private final List<Entity> entityList = new ArrayList<Entity>();
-    private final BooleanSetting armor = new BooleanSetting(this, "modules.settings.name_tags.armor");
+    private final BooleanSetting armor = new BooleanSetting(this, "modules.settings.name_tags.armor").enable();
     private final BooleanSetting offFriends = new BooleanSetting(this, "modules.settings.name_tags.offFriends");
     private final BooleanSetting items = new BooleanSetting(this, "modules.settings.name_tags.items");
     private final BooleanSetting backItems = new BooleanSetting((SettingsContainer)this, "modules.settings.name_tags.background", () -> !this.items.isEnabled());
@@ -116,8 +120,8 @@ extends BaseModule {
         for (Entity entity : this.entityList) {
             Vec3d pos2 = Utils.getInterpolatedPos(entity, tickDelta).add(0.0, entity.getBoundingBox().getLengthY() + 0.5, 0.0);
             Vec2f screenPos2 = Utils.worldToScreen(pos2);
-            if (screenPos2 == null || entity.getType() != EntityType.PLAYER || !this.armor.isEnabled()) continue;
-            this.renderArmorPlayer((PreHudRenderEvent)event, matrices, (PlayerEntity)entity, screenPos2);
+            if (screenPos2 == null || entity.getType() != EntityType.PLAYER) continue;
+            this.renderPlayerTag((PreHudRenderEvent)event, matrices, (PlayerEntity)entity, screenPos2, Pass.ITEMS);
         }
         for (Entity entity : this.entityList) {
             Vec3d pos2 = Utils.getInterpolatedPos(entity, tickDelta).add(0.0, entity.getBoundingBox().getLengthY() + 0.5, 0.0);
@@ -132,7 +136,7 @@ extends BaseModule {
             pos = Utils.getInterpolatedPos(entity, tickDelta).add(0.0, entity.getBoundingBox().getLengthY() + 0.5, 0.0);
             screenPos = Utils.worldToScreen(pos);
             if (screenPos == null || entity.getType() != EntityType.PLAYER) continue;
-            this.renderNametagPlayer((PreHudRenderEvent)event, matrices, entity, screenPos);
+            this.renderPlayerTag((PreHudRenderEvent)event, matrices, (PlayerEntity)entity, screenPos, Pass.TEXT);
         }
         for (List<ItemEntity> group : itemGroups) {
             ItemEntity first = (ItemEntity)group.getFirst();
@@ -187,7 +191,7 @@ extends BaseModule {
             pos = Utils.getInterpolatedPos(entity, tickDelta).add(0.0, entity.getBoundingBox().getLengthY() + 0.5, 0.0);
             screenPos = Utils.worldToScreen(pos);
             if (screenPos == null || entity.getType() != EntityType.PLAYER) continue;
-            this.renderBack(event, matrices, entity, screenPos);
+            this.renderPlayerTag(event, matrices, (PlayerEntity)entity, screenPos, Pass.BACK);
         }
         for (List list : itemGroups) {
             ItemEntity first = (ItemEntity)list.getFirst();
@@ -289,62 +293,81 @@ extends BaseModule {
         matrices.pop();
     }
 
-    private void renderBack(PreHudRenderEvent event, MatrixStack matrices, Entity entity, Vec2f screenPos) {
-        float distance = entity.distanceTo((Entity)Nametags.mc.player);
-        float scale = MathHelper.clamp((float)(1.0f - distance / 20.0f), (float)0.5f, (float)1.0f);
-        if (entity instanceof PlayerEntity) {
-            PlayerEntity player = (PlayerEntity)entity;
-            matrices.push();
-            matrices.translate(screenPos.x, screenPos.y, 0.0f);
-            matrices.scale(scale, scale, 1.0f);
-            MutableText displayName = entity.getDisplayName().copy().append(" ").append("[" + (int)EntityUtility.getHealth(player) + "]");
-            int textWidth = (int)Fonts.MEDIUM.getFont(11.0f).width((Text)displayName);
-            int x = -textWidth / 2;
-            int y = 5;
-            event.getContext().drawRect(x - 3, y - 3, textWidth + 5, Fonts.MEDIUM.getFont(11.0f).height() + 6.0f, Rockstar.getInstance().getFriendManager().isFriend(player.getName().getString()) ? new ColorRGBA(0.0f, 125.0f, 0.0f, 100.0f) : new ColorRGBA(0.0f, 0.0f, 0.0f, 100.0f));
-            matrices.pop();
-        }
+    private enum Pass {
+        BACK,
+        ITEMS,
+        TEXT
     }
 
-    private void renderNametagPlayer(PreHudRenderEvent event, MatrixStack matrices, Entity entity, Vec2f screenPos) {
-        float distance = entity.distanceTo((Entity)Nametags.mc.player);
-        float scale = MathHelper.clamp((float)(1.0f - distance / 20.0f), (float)0.5f, (float)1.0f);
-        if (entity instanceof PlayerEntity) {
-            PlayerEntity player = (PlayerEntity)entity;
-            matrices.push();
-            matrices.translate(screenPos.x, screenPos.y, 0.0f);
-            matrices.scale(scale, scale, 1.0f);
-            MutableText displayName = entity.getDisplayName().copy().append(" ").append((Text)Text.of((String)("[" + (int)EntityUtility.getHealth(player) + "]")).copy().withColor(-2142128));
-            int textWidth = (int)Fonts.MEDIUM.getFont(11.0f).width((Text)displayName);
-            int x = -textWidth / 2;
-            int y = 5;
-            event.getContext().drawText(Fonts.MEDIUM.getFont(11.0f), (Text)displayName, x - 1, y);
-            matrices.pop();
-        }
+    private static final float PILL_H = 15.0f;
+
+    private LinkedList<ItemStack> equipmentOf(PlayerEntity player) {
+        LinkedList<ItemStack> items = new LinkedList<ItemStack>();
+        items.add((ItemStack)player.getInventory().armor.get(3));
+        items.add((ItemStack)player.getInventory().armor.get(2));
+        items.add((ItemStack)player.getInventory().armor.get(1));
+        items.add((ItemStack)player.getInventory().armor.get(0));
+        items.add(player.getMainHandStack());
+        items.add(player.getOffHandStack());
+        items.removeIf(ItemStack::isEmpty);
+        return items;
     }
 
-    private void renderArmorPlayer(PreHudRenderEvent event, MatrixStack matrices, PlayerEntity entity, Vec2f screenPos) {
-        float distance = entity.distanceTo((Entity)Nametags.mc.player);
+    /**
+     * Draws a player's nametag as a black rounded pill: [person] name(+clan) [HP HP] [armor/held/offhand].
+     * Split into three passes so it slots into the existing batched render order (backgrounds, item icons, text).
+     */
+    private void renderPlayerTag(PreHudRenderEvent event, MatrixStack matrices, PlayerEntity player, Vec2f screenPos, Pass pass) {
+        float distance = player.distanceTo((Entity)Nametags.mc.player);
         float scale = MathHelper.clamp((float)(1.0f - distance / 20.0f), (float)0.5f, (float)1.0f);
+
+        // NOTE: must stay in the Fonts.MEDIUM family — the TEXT pass runs inside a
+        // FontBatching(Fonts.MEDIUM); mixing another atlas would sample wrong glyphs.
+        Font font = Fonts.MEDIUM.getFont(9.0f);
+        Font hpFont = Fonts.MEDIUM.getFont(8.0f);
+        boolean friend = Rockstar.getInstance().getFriendManager().isFriend(player.getName().getString());
+
+        NameProtect np = Rockstar.getInstance().getModuleManager().getModule(NameProtect.class);
+        String nameStr = np.isEnabled() ? np.patchName(player.getDisplayName().getString()) : player.getDisplayName().getString();
+        int hpVal = (int)EntityUtility.getHealth(player);
+        String hpStr = (hpVal == 1000 ? "?" : String.valueOf(hpVal)) + " HP";
+
+        LinkedList<ItemStack> items = this.armor.isEnabled() ? this.equipmentOf(player) : new LinkedList<ItemStack>();
+
+        float pad = 6.0f;
+        float iconSz = 8.0f;
+        float iconGap = 4.0f;
+        float gap = 6.0f;
+        float itemSlot = 11.0f;
+        float nameW = font.width(nameStr);
+        float hpW = hpFont.width(hpStr);
+        float itemsW = items.isEmpty() ? 0.0f : (gap + items.size() * itemSlot - 1.0f);
+        float pillW = pad + iconSz + iconGap + nameW + gap + hpW + itemsW + pad;
+
         matrices.push();
         matrices.translate(screenPos.x, screenPos.y, 0.0f);
         matrices.scale(scale, scale, 1.0f);
-        LinkedList<ItemStack> items = new LinkedList<ItemStack>();
-        items.add((ItemStack)entity.getInventory().armor.get(3));
-        items.add((ItemStack)entity.getInventory().armor.get(2));
-        items.add((ItemStack)entity.getInventory().armor.get(1));
-        items.add((ItemStack)entity.getInventory().armor.get(0));
-        items.add(entity.getMainHandStack());
-        items.add(entity.getOffHandStack());
-        items.removeIf(ItemStack::isEmpty);
-        int count = items.size();
-        if (count > 0) {
-            float totalWidth = (float)(count - 1) * 18.0f + 16.0f;
-            float startX = -totalWidth / 2.0f;
-            for (int i = 0; i < count; ++i) {
-                ItemStack item = (ItemStack)items.get(i);
-                int x = (int)(startX + (float)(i * 18));
-                event.getContext().drawBatchItem(item, x, -14);
+
+        float left = -pillW / 2.0f;
+        float top = -1.0f;
+        float cx = left + pad;
+        float nameX = cx + iconSz + iconGap;
+        float hpX = nameX + nameW + gap;
+        float itemsX = hpX + hpW + gap;
+
+        if (pass == Pass.BACK) {
+            event.getContext().drawSquircle(left, top, pillW, PILL_H, 6.0f, BorderRadius.all(5.0f), new ColorRGBA(0.0f, 0.0f, 0.0f, 205.0f));
+            event.getContext().drawRoundedBorder(left, top, pillW, PILL_H, 1.0f, BorderRadius.all(5.0f), (friend ? Colors.GREEN : Colors.getAccentColor()).mulAlpha(0.30f));
+            Glyphs.person(event.getContext(), cx, top + (PILL_H - iconSz) / 2.0f, iconSz, Colors.getTextColor());
+        } else if (pass == Pass.TEXT) {
+            event.getContext().drawText(font, nameStr, nameX, top + (PILL_H - font.height()) / 2.0f - 0.5f, friend ? Colors.GREEN : ColorRGBA.WHITE);
+            event.getContext().drawText(hpFont, hpStr, hpX, top + (PILL_H - hpFont.height()) / 2.0f - 0.5f, ColorRGBA.WHITE);
+        } else {
+            float ix = itemsX;
+            float itemY = top + (PILL_H - 10.0f) / 2.0f;
+            for (ItemStack item : items) {
+                event.getContext().drawItem(item, ix, itemY, 0.62f);
+                ix += itemSlot;
             }
         }
         matrices.pop();

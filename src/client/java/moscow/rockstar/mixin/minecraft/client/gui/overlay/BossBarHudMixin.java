@@ -20,8 +20,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import moscow.rockstar.Rockstar;
 import moscow.rockstar.systems.modules.modules.visuals.Removals;
+import moscow.rockstar.ui.hud.impl.VanillaHudElement;
 import moscow.rockstar.ui.hud.impl.island.DynamicIsland;
 import moscow.rockstar.ui.hud.impl.island.impl.PVPStatus;
 import moscow.rockstar.utility.game.server.ServerUtility;
@@ -47,6 +50,20 @@ implements IMinecraft {
     private static final Pattern PVP_TIME_PATTERN = Pattern.compile("(\\d+)\\s*[\u0441c][\u0435e][\u043ak](?=$|\\s|\\p{Punct})", 66);
     private static final String FILTERED_TEXT = "\ub445\ua223\ua203\ub444\ua223\ua205";
     private final Map<UUID, String> lastProcessedNames = new HashMap<UUID, String>();
+
+    @WrapMethod(method="render")
+    private void rockstar$moveBossBar(DrawContext context, Operation<Void> original) {
+        float dx = VanillaHudElement.offsetX(VanillaHudElement.Type.BOSSBAR);
+        float dy = VanillaHudElement.offsetY(VanillaHudElement.Type.BOSSBAR);
+        if (dx == 0.0f && dy == 0.0f) {
+            original.call(context);
+            return;
+        }
+        context.getMatrices().push();
+        context.getMatrices().translate(dx, dy, 0.0f);
+        original.call(context);
+        context.getMatrices().pop();
+    }
 
     @Inject(method={"render"}, at={@At(value="HEAD")})
     private void onRenderHead(DrawContext context, CallbackInfo ci) {

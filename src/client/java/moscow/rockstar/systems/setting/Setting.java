@@ -23,6 +23,10 @@ public interface Setting {
         return !this.getHideCondition().getAsBoolean();
     }
 
+    /** Восстановить рекомендованное клиентом значение (вызывается по СКМ в меню). */
+    default public void resetDefault() {
+    }
+
     public JsonElement save();
 
     public void load(JsonElement var1);

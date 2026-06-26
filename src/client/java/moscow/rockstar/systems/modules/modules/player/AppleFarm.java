@@ -26,12 +26,15 @@ import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.registry.tag.BlockTags;
+import net.minecraft.screen.PlayerScreenHandler;
+import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.*;
@@ -42,8 +45,11 @@ public class AppleFarm extends BaseModule {
     private final ModeSetting breakMode = new ModeSetting(this, "Break Mode");
     private final ModeSetting.Value packet = new ModeSetting.Value(this.breakMode, "Packet").select();
     private final ModeSetting.Value legit = new ModeSetting.Value(this.breakMode, "Legit");
+    private final ModeSetting.Value megaLegit = new ModeSetting.Value(this.breakMode, "Mega Legit");
     private final BooleanSetting silentRotations = new BooleanSetting(this, "Silent Rotations").enable();
     private final BooleanSetting autoCollect = new BooleanSetting(this, "Auto Collect Drops").enable();
+    private final BooleanSetting autoStoreApples = new BooleanSetting(this, "Авто слаживание яблок");
+    private final SliderSetting storeApplesEvery = new SliderSetting(this, "Слаживать каждые").min(1.0f).max(2304.0f).step(1.0f).currentValue(100.0f).suffix(" ябл.");
     private final BooleanSetting useGreener = new BooleanSetting(this, "Озеленитель");
     private final BooleanSetting autoRepair = new BooleanSetting(this, "Auto Repair").enable();
     private final SliderSetting repairAt = new SliderSetting(this, "Repair At %").min(5.0f).max(50.0f).step(1.0f).currentValue(10.0f);
@@ -59,6 +65,11 @@ public class AppleFarm extends BaseModule {
     private int ourLastSlot = -1;
     private int slotSwapCooldown;
     private int inventoryMoveCooldown;
+    private boolean storingApples;
+    private boolean storageCommandSent;
+    private int storageTicks;
+    private int storageMoveCooldown;
+    private int storageRetryCooldown;
     private RepairPhase repairPhase = RepairPhase.NONE;
     private int repairSetupTicks;
     private final Timer actionTimer = new Timer();
@@ -71,6 +82,9 @@ public class AppleFarm extends BaseModule {
         if (mc.player == null || mc.world == null || mc.interactionManager == null || this.dirtPos == null) return;
         if (this.slotSwapCooldown > 0) this.slotSwapCooldown--;
         if (this.inventoryMoveCooldown > 0) this.inventoryMoveCooldown--;
+        if (this.storageRetryCooldown > 0) this.storageRetryCooldown--;
+        if (this.storageMoveCooldown > 0) this.storageMoveCooldown--;
+        if (this.handleAutoStoreApples()) return;
         this.resolveState();
         this.handlePre();
         this.handlePost();
@@ -97,10 +111,15 @@ public class AppleFarm extends BaseModule {
         this.canAct = false;
         this.slotSwapCooldown = 0;
         this.inventoryMoveCooldown = 0;
+        this.storingApples = false;
+        this.storageCommandSent = false;
+        this.storageTicks = 0;
+        this.storageMoveCooldown = 0;
+        this.storageRetryCooldown = 0;
         this.ourLastSlot = mc.player.getInventory().selectedSlot;
         this.repairPhase = RepairPhase.NONE;
         this.actionTimer.reset();
-        MessageUtility.info(Text.of("§a[AppleFarm] Запущен: " + (this.packet.isSelected() ? "Packet" : "Legit") + ", dirt=" + this.dirtPos.getX() + "," + this.dirtPos.getY() + "," + this.dirtPos.getZ()));
+        MessageUtility.info(Text.of("§a[AppleFarm] Запущен: " + this.getBreakModeName() + ", dirt=" + this.dirtPos.getX() + "," + this.dirtPos.getY() + "," + this.dirtPos.getZ()));
         super.onEnable();
     }
 
@@ -111,6 +130,8 @@ public class AppleFarm extends BaseModule {
         this.repairPhase = RepairPhase.NONE;
         this.lastRotatedTarget = null;
         this.currentLegitTarget = null;
+        this.storingApples = false;
+        this.storageCommandSent = false;
         super.onDisable();
     }
 
@@ -129,8 +150,8 @@ public class AppleFarm extends BaseModule {
         }
         Direction face = this.getActionFace(target);
         Vec3d hitVec = this.faceHitVec(target, face);
-        this.rotateTo(hitVec);
-        if (target.equals(this.lastRotatedTarget)) this.canAct = true;
+        boolean rotationReady = this.rotateTo(hitVec);
+        if (target.equals(this.lastRotatedTarget) && rotationReady) this.canAct = true;
         else if (this.currentLegitTarget != null && !target.equals(this.currentLegitTarget)) {
             mc.interactionManager.cancelBlockBreaking();
             this.currentLegitTarget = null;
@@ -268,10 +289,121 @@ public class AppleFarm extends BaseModule {
     private int findXpBottleSlot() { return this.findSlot(s -> s.isOf(Items.EXPERIENCE_BOTTLE)); }
     private void swapToOffhand(int rawSlot) { int serverSlot = rawSlot < 9 ? rawSlot + 36 : rawSlot; mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, serverSlot, 40, SlotActionType.SWAP, mc.player); }
 
+    private boolean handleAutoStoreApples() {
+        if (!this.autoStoreApples.isEnabled()) return false;
+        if (!this.storingApples) {
+            if (this.storageRetryCooldown > 0) return false;
+            int threshold = Math.max(1, (int)this.storeApplesEvery.getCurrentValue());
+            if (this.countApples() < threshold) return false;
+            this.storingApples = true;
+            this.storageCommandSent = false;
+            this.storageTicks = 0;
+            this.storageMoveCooldown = 0;
+            this.currentLegitTarget = null;
+            this.lastRotatedTarget = null;
+            mc.interactionManager.cancelBlockBreaking();
+            MessageUtility.info(Text.of("§b[AppleFarm] Складываю яблоки в /clan storage..."));
+        }
+        this.handleStorageDeposit();
+        return true;
+    }
+
+    private void handleStorageDeposit() {
+        if (!this.storageCommandSent) {
+            mc.player.networkHandler.sendChatCommand("clan storage");
+            this.storageCommandSent = true;
+            this.storageTicks = 0;
+            return;
+        }
+        this.storageTicks++;
+        if (this.storageTicks > 100) {
+            this.finishStorageDeposit("§c[AppleFarm] Не удалось открыть /clan storage");
+            this.storageRetryCooldown = 100;
+            return;
+        }
+        int containerSlots = this.getContainerSlotCount();
+        if (containerSlots <= 0) return;
+        if (this.storageMoveCooldown > 0) return;
+        if (this.findFreeContainerSlot(containerSlots) == -1) {
+            this.finishStorageDeposit("§e[AppleFarm] В clan storage нет свободных слотов");
+            this.storageRetryCooldown = 100;
+            return;
+        }
+        int appleSlot = this.findAppleScreenSlot(containerSlots);
+        if (appleSlot == -1) {
+            this.finishStorageDeposit("§a[AppleFarm] Яблоки сложены");
+            this.storageRetryCooldown = 20;
+            return;
+        }
+        mc.interactionManager.clickSlot(mc.player.currentScreenHandler.syncId, appleSlot, 0, SlotActionType.QUICK_MOVE, mc.player);
+        this.storageMoveCooldown = 2;
+    }
+
+    private void finishStorageDeposit(String message) {
+        if (this.getContainerSlotCount() > 0) mc.player.closeHandledScreen();
+        this.storingApples = false;
+        this.storageCommandSent = false;
+        this.storageTicks = 0;
+        this.storageMoveCooldown = 0;
+        MessageUtility.info(Text.of(message));
+    }
+
+    private int countApples() {
+        int count = 0;
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = mc.player.getInventory().getStack(i);
+            if (stack.isOf(Items.APPLE)) count += stack.getCount();
+        }
+        return count;
+    }
+
+    private int getContainerSlotCount() {
+        if (mc.player.currentScreenHandler instanceof PlayerScreenHandler) return 0;
+        int total = mc.player.currentScreenHandler.slots.size();
+        int containerSlots = total - 36;
+        return containerSlots > 0 ? containerSlots : 0;
+    }
+
+    private int findFreeContainerSlot(int containerSlots) {
+        for (int i = 0; i < containerSlots; i++) {
+            Slot slot = mc.player.currentScreenHandler.slots.get(i);
+            if (slot.inventory != mc.player.getInventory() && !slot.hasStack()) return i;
+        }
+        return -1;
+    }
+
+    private int findAppleScreenSlot(int containerSlots) {
+        for (int i = containerSlots; i < mc.player.currentScreenHandler.slots.size(); i++) {
+            Slot slot = mc.player.currentScreenHandler.slots.get(i);
+            if (slot.inventory == mc.player.getInventory() && slot.hasStack() && slot.getStack().isOf(Items.APPLE)) return i;
+        }
+        return -1;
+    }
+
     private String checkInventory() { if (this.findSlot(s -> s.getItem() instanceof HoeItem) == -1) return "Мотыга"; if (!this.useGreener.isEnabled() && this.findSlot(s -> s.isOf(Items.BONE_MEAL)) == -1) return "Костная мука"; if (this.findSlot(s -> s.getItem() instanceof AxeItem) == -1) return "Топор"; if (this.findSlot(s -> { Block b = Block.getBlockFromItem(s.getItem()); return b != null && b.getDefaultState().isIn(BlockTags.SAPLINGS); }) == -1) return "Саженец"; return null; }
     private Direction getClosestFace(BlockPos pos) { Vec3d eyePos = mc.player.getEyePos(); Vec3d center = Vec3d.ofCenter(pos); double dx = eyePos.x - center.x, dy = eyePos.y - center.y, dz = eyePos.z - center.z; double ax = Math.abs(dx), ay = Math.abs(dy), az = Math.abs(dz); if (ay >= ax && ay >= az) return dy > 0 ? Direction.UP : Direction.DOWN; if (ax >= az) return dx > 0 ? Direction.EAST : Direction.WEST; return dz > 0 ? Direction.SOUTH : Direction.NORTH; }
-    private void rotateTo(Vec3d point) { if (this.silentRotations.isEnabled()) Rockstar.getInstance().getRotationHandler().rotate(RotationMath.getRotationTo(point), MoveCorrection.SILENT, 180.0f, 180.0f, 70.0f, RotationPriority.TO_TARGET); else { var rot = RotationMath.getRotationTo(point); mc.player.setYaw(rot.getYaw()); mc.player.setPitch(rot.getPitch()); } }
+    private boolean rotateTo(Vec3d point) {
+        var rot = RotationMath.getRotationTo(point);
+        if (this.silentRotations.isEnabled()) {
+            float yawSpeed = this.megaLegit.isSelected() ? 120.0f : 180.0f;
+            float pitchSpeed = this.megaLegit.isSelected() ? 120.0f : 180.0f;
+            float accel = this.megaLegit.isSelected() ? 45.0f : 70.0f;
+            Rockstar.getInstance().getRotationHandler().rotate(rot, MoveCorrection.SILENT, yawSpeed, pitchSpeed, accel, RotationPriority.TO_TARGET);
+            return true;
+        }
+        if (this.megaLegit.isSelected()) {
+            mc.player.setYaw(this.stepAngle(mc.player.getYaw(), rot.getYaw(), 12.0f));
+            mc.player.setPitch(this.stepAngle(mc.player.getPitch(), rot.getPitch(), 10.0f));
+            return this.isRotationClose(rot.getYaw(), rot.getPitch(), 4.0f);
+        }
+        mc.player.setYaw(rot.getYaw());
+        mc.player.setPitch(rot.getPitch());
+        return true;
+    }
     private void rotateDown() { this.rotateTo(mc.player.getPos().add(0.0, -5.0, 0.0)); }
+    private float stepAngle(float from, float to, float maxStep) { float delta = MathHelper.wrapDegrees(to - from); if (delta > maxStep) delta = maxStep; if (delta < -maxStep) delta = -maxStep; return from + delta; }
+    private boolean isRotationClose(float yaw, float pitch, float tolerance) { return Math.abs(MathHelper.wrapDegrees(yaw - mc.player.getYaw())) <= tolerance && Math.abs(pitch - mc.player.getPitch()) <= tolerance; }
+    private String getBreakModeName() { return this.packet.isSelected() ? "Packet" : this.megaLegit.isSelected() ? "Mega Legit" : "Legit"; }
 
     private boolean shouldRepairHoe() { if (!this.autoRepair.isEnabled()) return false; int slot = this.findHoeHotbarSlot(); if (slot == -1) return false; ItemStack hoe = mc.player.getInventory().getStack(slot); if (!hoe.isDamageable() || hoe.getMaxDamage() <= 0) return false; double remaining = 1.0 - (double)hoe.getDamage() / (double)hoe.getMaxDamage(); return remaining <= this.repairAt.getCurrentValue() / 100.0 && this.hasMending(hoe) && this.findXpBottleSlot() != -1; }
     private boolean hasMending(ItemStack stack) { return EnchantmentUtility.hasEnchantments(stack, Enchantments.MENDING); }

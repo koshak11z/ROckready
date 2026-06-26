@@ -543,64 +543,173 @@ public class AuraLegacy
             handler.rotate(new Rotation(targetYaw, Math.clamp(targetPitch, -90.0f, 90.0f)), moveCorrection, yawSpeed * 20.0f, pitchSpeed * 20.0f, MathUtility.random(12.0, 30.0), RotationPriority.TO_TARGET);
         }
         if (this.rotationMode.is(this.spookyTimeRotation)) {
-            if (mc.player.age % 500 == 0) {
-                this.noise = new PerlinNoise();
-                this.noiseFactor = 1.0f;
-            }
-            boolean collide = EntityUtility.collideWith(targetedEntity, 1.0f);
-            Vec3d nearY = RotationMath.getNearestPoint(targetedEntity);
-            Rotation targetRot = RotationMath.getRotationTo(new Vec3d(nearY.x, MathHelper.clamp((double)MathUtility.interpolate(mc.player.getY(), targetedEntity.getEyeY(), 0.5), (double)targetedEntity.getBoundingBox().minY, (double)targetedEntity.getBoundingBox().maxY), nearY.z));
-            Rotation multipoint = RotationMath.getRotationTo(RotationMath.getNearestPoint(targetedEntity));
-            if (collide) {
-                targetRot = RotationMath.getRotationTo(targetedEntity.getPos().add(0.0, 0.5, 0.0));
-            }
-            if (!MathUtility.canTraceWithBlock(this.attackDistance.getCurrentValue(), targetRot.getYaw(), targetRot.getPitch(), (Entity)mc.player, (Entity)targetedEntity, !this.walls.isEnabled()) && mc.player.getEyePos().distanceTo(targetedEntity.getEyePos()) > 3.0) {
-                targetRot.setPitch(multipoint.getPitch() + 10.0f);
-            }
-            boolean idle = this.attackTimer.finished(this.getTpsDelay(collide ? 500L : 200L));
-            if (this.additional == null) {
-                this.additional = new Rotation(0.0f, 0.0f);
-            }
-            float targetYaw = targetRot.getYaw();
-            float targetPitch = targetRot.getPitch();
-            Rotation currentRot = handler.getCurrentRotation();
-            float currentYaw = currentRot.getYaw();
-            float currentPitch = currentRot.getPitch();
-            float yawDiff = RotationMath.getAngleDifference(currentYaw, targetYaw);
-            float pitchDiff = RotationMath.getAngleDifference(currentPitch, targetPitch);
-            if (!this.shouldPreventSprinting() && idle && EntityUtility.getBlock(0.0, 2.0, 0.0) == Blocks.AIR) {
-                targetYaw += 10.0f;
-                targetPitch -= 20.0f;
-            }
-            float yawSpeed = Math.max((90.0f - Math.abs(yawDiff)) / (!this.shouldPreventSprinting() && idle ? 5.0f : (idle ? (mc.player.fallDistance > 0.0f ? 25.0f : 10.0f) : 60.0f)), MathUtility.random(1.0, 5.0)) * MathUtility.random(0.9, 1.1);
-            float pitchSpeed = Math.abs(pitchDiff) / (!this.shouldPreventSprinting() && idle ? 5.0f : (idle ? (mc.player.fallDistance > 0.0f ? 25.0f : 10.0f) : 40.0f)) * MathUtility.random(0.9, 1.1);
-            if (!EntityUtility.collideWith(targetedEntity)) {
-                this.collideTimer.reset();
-            }
-            if (this.collideTimer.finished(500L) && CombatUtility.stalin(targetedEntity)) {
-                targetPitch = (float)(64.0 + (mc.player.getY() - targetedEntity.getY() + 1.0) * (5.0 + Math.sin((float)(mc.player.age % 100 / 5) * 1924.12f) * 35.0) - 5.0 + 10.0);
-                yawSpeed /= MathUtility.random(30.0, 50.0);
-            }
-            if (!idle && EntityUtility.getBlock(0.0, 2.0, 0.0) == Blocks.AIR && !collide) {
-                targetYaw += this.additional.getYaw();
-                targetPitch += this.additional.getPitch();
-            }
-            if (this.walls.isEnabled() && !MathUtility.canSeen(nearY) && mc.player.fallDistance <= CombatUtility.getFallDistance(targetedEntity)) {
-                targetPitch = -90.0f;
-            }
-            long timeElapsed = System.currentTimeMillis() - this.rotationStartTime;
-            float yawNoise = (float)this.noise.noise((double)timeElapsed * 5.0E-4);
-            float pitchNoise = (float)this.noise.noise((double)timeElapsed * 5.0E-4, 10.0);
-            float yawOffset = yawNoise * 25.0f * this.noiseFactor;
-            float pitchOffset = pitchNoise * 25.0f * this.noiseFactor;
-            float finalTargetYaw = targetYaw + yawOffset;
-            float finalTargetPitch = targetPitch + pitchOffset;
-            float totalDiff = Math.abs(yawDiff) + Math.abs(pitchDiff);
-            if (totalDiff < 10.0f) {
-                this.noiseFactor = Math.max(0.0f, this.noiseFactor - 0.05f);
-            }
-            handler.rotate(new Rotation(finalTargetYaw, Math.clamp(finalTargetPitch, -90.0f, 90.0f)), moveCorrection, yawSpeed * 25.0f, pitchSpeed * 25.0f, MathUtility.random(30.0, 70.0), RotationPriority.TO_TARGET);
+            // Если в AuraLegacy выбран SpookyTime, используем обновленную отдельную обработку.
+            this.rotateSpookyTime(targetedEntity, handler, moveCorrection);
         }
+    }
+
+    // Вся логика SpookyTime-ротации вынесена сюда, чтобы режим было проще настраивать и читать.
+    private void rotateSpookyTime(LivingEntity targetedEntity, RotationHandler handler, MoveCorrection moveCorrection) {
+        // 500 тиков - примерно 25 секунд при 20 TPS; обновляем шум, чтобы рисунок ротации не застывал.
+        if (mc.player.age % 500 == 0) {
+            // Создаем новый PerlinNoise, который дает плавное, а не резкое случайное смещение.
+            this.noise = new PerlinNoise();
+            // 1.0f - полный вес шума после обновления или потери цели.
+            this.noiseFactor = 1.0f;
+        }
+
+        // 1.0f расширяет хитбокс цели по X/Z и помогает понять, что игрок уже в ближнем контакте.
+        boolean collide = EntityUtility.collideWith(targetedEntity, 1.0f);
+        // Повторно сохраняем проверку без расширения, чтобы таймер коллизии не дергался на краю хитбокса.
+        boolean hardCollide = EntityUtility.collideWith(targetedEntity);
+        // Проверяем блок над головой: AIR значит можно делать небольшой верхний оффсет без упора в потолок.
+        boolean hasHeadRoom = EntityUtility.getBlock(0.0, 2.0, 0.0) == Blocks.AIR;
+        // Сохраняем критическое состояние один раз, чтобы sprint-логика не пересчитывалась разными случайными задержками.
+        boolean sprintLocked = this.shouldPreventSprinting();
+        // Берем ближайшую точку хитбокса, потому что она стабильнее центра на маленькой дистанции.
+        Vec3d nearestPoint = RotationMath.getNearestPoint(targetedEntity);
+        // Дистанция до глаз цели помогает ослаблять оффсеты, когда цель уже рядом.
+        double eyeDistance = mc.player.getEyePos().distanceTo(targetedEntity.getEyePos());
+        // 0.42/0.55/0.48 - вертикальный вес: ниже в клинче, выше на дальней дистанции, середина в обычной ситуации.
+        float yBlend = collide ? 0.42f : (eyeDistance > 3.0 ? 0.55f : 0.48f);
+        // minY + 0.05 и maxY - 0.05 не дают целиться ровно в грань хитбокса, где трассировка часто шумит.
+        double targetY = MathHelper.clamp(
+                MathUtility.interpolate(mc.player.getY(), targetedEntity.getEyeY(), yBlend),
+                targetedEntity.getBoundingBox().minY + 0.05,
+                targetedEntity.getBoundingBox().maxY - 0.05
+        );
+        // Собираем основную точку наведения из ближайших X/Z и сглаженной Y.
+        Vec3d aimPoint = new Vec3d(nearestPoint.x, targetY, nearestPoint.z);
+        // В клинче целимся ближе к корпусу: 0.38 высоты выглядит стабильнее, чем старый жесткий Y=0.5.
+        Vec3d collisionPoint = targetedEntity.getPos().add(0.0, MathHelper.clamp(targetedEntity.getHeight() * 0.38f, 0.35f, 0.75f), 0.0);
+        // Если есть контакт, берем корпус; иначе работаем по ближайшей точке хитбокса.
+        Rotation targetRot = RotationMath.getRotationTo(collide ? collisionPoint : aimPoint);
+        // Мультипоинт нужен как запасной pitch, когда основной луч упирается в блок или край хитбокса.
+        Rotation multipoint = RotationMath.getRotationTo(RotationMath.getNearestPoint(targetedEntity));
+        // rayTrace включаем с текущей дистанцией атаки, чтобы ротация не уходила в точку, которую нельзя ударить.
+        boolean canTrace = MathUtility.canTraceWithBlock(
+                this.attackDistance.getCurrentValue(),
+                targetRot.getYaw(),
+                targetRot.getPitch(),
+                (Entity)mc.player,
+                (Entity)targetedEntity,
+                !this.walls.isEnabled()
+        );
+        // Если дальняя цель не трассируется, мягко поднимаем pitch к мультипоинту вместо старого резкого +10.
+        if (!canTrace && eyeDistance > 3.0) {
+            // 0.55 - вес запасного pitch; 8 градусов дают небольшой запас над краем хитбокса.
+            targetRot.setPitch(MathUtility.interpolate(targetRot.getPitch(), multipoint.getPitch() + 8.0f, 0.55f));
+        }
+
+        // 450 мс в контакте и 220 мс без контакта задают паузу; getTpsDelay сохраняет legacy TPS-sync.
+        boolean idle = this.attackTimer.finished(this.getTpsDelay(collide ? 450L : 220L));
+        // Если после атаки дополнительный оффсет еще не создан, начинаем с нулевого значения.
+        if (this.additional == null) {
+            // 0/0 означает отсутствие пост-атачного сдвига yaw/pitch.
+            this.additional = new Rotation(0.0f, 0.0f);
+        }
+
+        // Целевой yaw из рассчитанной ротации.
+        float targetYaw = targetRot.getYaw();
+        // Целевой pitch из рассчитанной ротации.
+        float targetPitch = targetRot.getPitch();
+        // Текущая серверная/тихая ротация из общего RotationHandler.
+        Rotation currentRot = handler.getCurrentRotation();
+        // Текущий yaw нужен для расчета кратчайшей дельты.
+        float currentYaw = currentRot.getYaw();
+        // Текущий pitch нужен для расчета вертикальной дельты.
+        float currentPitch = currentRot.getPitch();
+        // yawDiff хранит кратчайшую разницу в градусах с учетом перехода через 180/-180.
+        float yawDiff = RotationMath.getAngleDifference(currentYaw, targetYaw);
+        // pitchDiff хранит вертикальную разницу в градусах.
+        float pitchDiff = RotationMath.getAngleDifference(currentPitch, targetPitch);
+        // Если крит не удерживает спринт, idle активен и над головой пусто, добавляем небольшой человеческий отвод.
+        if (!sprintLocked && idle && hasHeadRoom) {
+            // Синус дает плавный отвод yaw в пределах примерно 4-8 градусов вместо постоянных старых 10.
+            targetYaw += 6.0f + (float)Math.sin(mc.player.age * 0.18f) * 2.0f;
+            // Pitch уводим вверх на 10-14 градусов, меньше старых 20, чтобы не было резкого рывка.
+            targetPitch -= 12.0f + (float)Math.cos(mc.player.age * 0.16f) * 2.0f;
+        }
+
+        // Базовая скорость yaw растет от ошибки: чем дальше цель от прицела, тем быстрее доводка.
+        float yawSpeed = MathHelper.clamp(Math.abs(yawDiff) * 0.42f + (idle ? 8.0f : 4.0f), 5.0f, idle ? 48.0f : 32.0f);
+        // Базовая скорость pitch мягче yaw, чтобы вертикальная ротация не прыгала.
+        float pitchSpeed = MathHelper.clamp(Math.abs(pitchDiff) * 0.35f + (idle ? 3.5f : 2.0f), 3.0f, idle ? 28.0f : 18.0f);
+        // 0.92-1.08 добавляет маленький разброс скорости без старого сильного дерганья.
+        yawSpeed *= MathUtility.random(0.92, 1.08);
+        // 0.92-1.08 добавляет такой же маленький разброс для pitch.
+        pitchSpeed *= MathUtility.random(0.92, 1.08);
+        // Если настоящего пересечения больше нет, сбрасываем таймер клинча.
+        if (!hardCollide) {
+            // Сброс нужен, чтобы stalin-ветка не включалась после выхода из хитбокса.
+            this.collideTimer.reset();
+        }
+
+        // Через 450 мс плотного контакта включаем защитный режим против застревания на цели.
+        if (this.collideTimer.finished(this.getTpsDelay(450L)) && CombatUtility.stalin(targetedEntity)) {
+            // stalinPitch держит взгляд в безопасном диапазоне -20..82, без старого почти вертикального снапа.
+            float stalinPitch = MathHelper.clamp(35.0f + (float)(mc.player.getY() - targetedEntity.getY()) * 8.0f + (float)Math.sin(mc.player.age * 0.45f) * 6.0f, -20.0f, 82.0f);
+            // 0.55 смешивает текущий pitch с защитным, чтобы переход был заметным, но не мгновенным.
+            targetPitch = MathUtility.interpolate(targetPitch, stalinPitch, 0.55f);
+            // 0.45 замедляет yaw в клинче, чтобы не пилить головой при тесном столкновении.
+            yawSpeed *= 0.45f;
+        }
+
+        // После удара добавляем сохраненный дополнительный оффсет, но только когда нет idle и клинча.
+        if (!idle && hasHeadRoom && !collide) {
+            // 0.65 оставляет часть пост-атачного yaw-сдвига, не давая ему увести прицел слишком далеко.
+            targetYaw += this.additional.getYaw() * 0.65f;
+            // 0.45 ослабляет pitch-сдвиг, потому что вертикальные оффсеты заметнее античиту и игроку.
+            targetPitch += this.additional.getPitch() * 0.45f;
+        }
+
+        // Если стены включены, точка не видна и падение еще не достаточно для крита, уводим pitch вниз мягче.
+        if (this.walls.isEnabled() && !MathUtility.canSeen(nearestPoint) && mc.player.fallDistance <= CombatUtility.getFallDistance(targetedEntity)) {
+            // -70 заменяет старые -90, чтобы камера не падала строго вертикально.
+            targetPitch = MathUtility.interpolate(targetPitch, -70.0f, 0.45f);
+            // 0.75 дополнительно замедляет yaw при wall-сценарии, чтобы возврат был плавнее.
+            yawSpeed *= 0.75f;
+        }
+
+        // Считаем, сколько миллисекунд прошло с начала текущего паттерна ротации.
+        long timeElapsed = System.currentTimeMillis() - this.rotationStartTime;
+        // 5.0E-4 делает шум медленным: значение меняется плавно, а не каждый тик как Random.
+        float yawNoise = (float)this.noise.noise((double)timeElapsed * 5.0E-4);
+        // Второй аргумент 10.0 сдвигает канал pitch, чтобы yaw и pitch не повторяли одну волну.
+        float pitchNoise = (float)this.noise.noise((double)timeElapsed * 5.0E-4, 10.0);
+        // Чем меньше суммарная ошибка, тем сильнее режем шум, чтобы на цели прицел не плавал.
+        float noiseScale = MathHelper.clamp((Math.abs(yawDiff) + Math.abs(pitchDiff)) / 60.0f, 0.25f, 1.0f);
+        // 10 градусов - максимум yaw-шума до умножения на noiseFactor и noiseScale.
+        float yawOffset = yawNoise * 10.0f * this.noiseFactor * noiseScale;
+        // 6 градусов - максимум pitch-шума, меньше yaw, чтобы вертикаль оставалась спокойной.
+        float pitchOffset = pitchNoise * 6.0f * this.noiseFactor * noiseScale;
+        // Финальный yaw состоит из цели и плавного шумового смещения.
+        float finalTargetYaw = targetYaw + yawOffset;
+        // Финальный pitch состоит из цели и плавного шумового смещения.
+        float finalTargetPitch = targetPitch + pitchOffset;
+        // totalDiff нужен, чтобы постепенно выключать шум, когда ротация уже почти на цели.
+        float totalDiff = Math.abs(yawDiff) + Math.abs(pitchDiff);
+        // 12 градусов - зона стабилизации, в которой шум начинает затухать.
+        if (totalDiff < 12.0f) {
+            // 0.04 за тик гасит noiseFactor плавнее старых 0.05 и меньше дергает при входе в цель.
+            this.noiseFactor = Math.max(0.0f, this.noiseFactor - 0.04f);
+        }
+
+        // Отправляем готовую ротацию в общий обработчик.
+        handler.rotate(
+                // Pitch ограничиваем -89..89, чтобы не ловить крайние вертикальные значения камеры.
+                new Rotation(finalTargetYaw, Math.clamp(finalTargetPitch, -89.0f, 89.0f)),
+                // moveCorrection сохраняет выбранный режим коррекции движения.
+                moveCorrection,
+                // yawSpeed уже в градусах за тик, без старого множителя 25.
+                yawSpeed,
+                // pitchSpeed уже в градусах за тик, без старого множителя 25.
+                pitchSpeed,
+                // 35-60 градусов задают умеренный возврат после завершения задачи ротации.
+                MathUtility.random(35.0, 60.0),
+                // TO_TARGET оставляет приоритет цели выше обычных ротаций, но ниже override-задач.
+                RotationPriority.TO_TARGET
+        );
     }
 
     public float getGCDValue() {
@@ -678,4 +787,3 @@ public class AuraLegacy
     }
 
 }
-

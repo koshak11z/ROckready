@@ -23,6 +23,22 @@ loom {
 	splitEnvironmentSourceSets()
 	accessWidenerPath = file("src/main/resources/rockstar.accesswidener")
 
+	runs {
+		client {
+			client()
+			setConfigName("Minecraft Client")
+			ideConfigGenerated(true)
+			runDir("run")
+		}
+
+		client2 {
+			client()
+			setConfigName("Minecraft Client 2")
+			ideConfigGenerated(true)
+			runDir("run2")
+		}
+	}
+
 	mods {
 		"rockstar" {
 			sourceSet sourceSets.main

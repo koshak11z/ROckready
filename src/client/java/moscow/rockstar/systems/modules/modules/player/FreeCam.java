@@ -94,18 +94,28 @@ extends BaseModule {
 
     @Override
     public void onDisable() {
-        if (this.dummy == null || FreeCam.mc.world == null || FreeCam.mc.player == null || mc.getNetworkHandler() == null) {
-            return;
+        // Restore abilities + game mode FIRST and unconditionally. Otherwise an early return here
+        // (dummy/world/networkHandler null during a world change) would leave the client stuck in
+        // SPECTATOR — which makes vanilla hide the health/hunger/xp HUD ("they disappear at random").
+        if (FreeCam.mc.player != null) {
+            FreeCam.mc.player.getAbilities().allowFlying = this.wasFlyingAllowed;
+            FreeCam.mc.player.getAbilities().flying = this.wasFlying;
+            FreeCam.mc.player.getAbilities().setFlySpeed(this.oldFlyingSpeed);
+            if (FreeCam.mc.interactionManager != null && this.prevGameMode != null) {
+                FreeCam.mc.interactionManager.setGameMode(this.prevGameMode);
+            }
+            FreeCam.mc.player.setVelocity(0.0, 0.0, 0.0);
         }
-        FreeCam.mc.player.copyPositionAndRotation((Entity)this.dummy);
-        mc.getNetworkHandler().sendPacket((Packet)new PlayerMoveC2SPacket.PositionAndOnGround(this.dummy.getX(), this.dummy.getY(), this.dummy.getZ(), false, FreeCam.mc.player.horizontalCollision));
-        FreeCam.mc.player.getAbilities().allowFlying = this.wasFlyingAllowed;
-        FreeCam.mc.player.getAbilities().flying = this.wasFlying;
-        FreeCam.mc.player.getAbilities().setFlySpeed(this.oldFlyingSpeed);
-        FreeCam.mc.interactionManager.setGameMode(this.prevGameMode);
-        this.dummy.remove();
-        this.dummy = null;
-        FreeCam.mc.player.setVelocity(0.0, 0.0, 0.0);
+        if (this.dummy != null) {
+            if (FreeCam.mc.player != null) {
+                FreeCam.mc.player.copyPositionAndRotation((Entity)this.dummy);
+                if (mc.getNetworkHandler() != null) {
+                    mc.getNetworkHandler().sendPacket((Packet)new PlayerMoveC2SPacket.PositionAndOnGround(this.dummy.getX(), this.dummy.getY(), this.dummy.getZ(), false, FreeCam.mc.player.horizontalCollision));
+                }
+            }
+            this.dummy.remove();
+            this.dummy = null;
+        }
         super.onDisable();
     }
 }

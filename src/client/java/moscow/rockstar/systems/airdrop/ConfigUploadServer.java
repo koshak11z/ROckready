@@ -15,6 +15,8 @@ package moscow.rockstar.systems.airdrop;
 import fi.iki.elonen.NanoHTTPD;
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -28,18 +30,36 @@ import moscow.rockstar.utility.interfaces.IMinecraft;
 public class ConfigUploadServer
 extends NanoHTTPD
 implements IMinecraft {
+    private static final int DEFAULT_PORT = 5656;
+    private static final int MAX_PORT = 5666;
     private final File directory;
+    private final int port;
     private String name;
     private boolean render;
 
     public ConfigUploadServer() throws IOException {
-        super(5656);
+        super(ConfigUploadServer.findFreePort());
         this.directory = new File(ConfigUploadServer.mc.runDirectory, "Rockstar" + File.separator + "configs");
         if (!this.directory.exists() && !this.directory.mkdirs()) {
             throw new IOException("\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0437\u0434\u0430\u0442\u044c \u043f\u0430\u043f\u043a\u0443 \u0434\u043b\u044f \u043a\u043e\u043d\u0444\u0438\u0433\u043e\u0432: " + String.valueOf(this.directory));
         }
         this.start(5000, false);
-        System.out.println("\u0421\u0435\u0440\u0432\u0435\u0440 \u0437\u0430\u043f\u0443\u0449\u0435\u043d \u043d\u0430 \u043f\u043e\u0440\u0442\u0443 5656, \u043a\u043e\u043d\u0444\u0438\u0433\u0438 \u0432 " + this.directory.getAbsolutePath());
+        this.port = this.getListeningPort();
+        System.out.println("\u0421\u0435\u0440\u0432\u0435\u0440 \u0437\u0430\u043f\u0443\u0449\u0435\u043d \u043d\u0430 \u043f\u043e\u0440\u0442\u0443 " + this.port + ", \u043a\u043e\u043d\u0444\u0438\u0433\u0438 \u0432 " + this.directory.getAbsolutePath());
+    }
+
+    private static int findFreePort() throws IOException {
+        for (int candidate = DEFAULT_PORT; candidate <= MAX_PORT; ++candidate) {
+            try (ServerSocket socket = new ServerSocket()) {
+                socket.setReuseAddress(false);
+                socket.bind(new InetSocketAddress("127.0.0.1", candidate));
+                return candidate;
+            } catch (IOException ignored) {
+            }
+        }
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 
     public NanoHTTPD.Response serve(NanoHTTPD.IHTTPSession session) {
@@ -100,5 +120,9 @@ implements IMinecraft {
     public boolean isRender() {
         return this.render;
     }
-}
 
+    @Generated
+    public int getPort() {
+        return this.port;
+    }
+}

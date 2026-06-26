@@ -37,9 +37,12 @@ import moscow.rockstar.ui.hud.Grid;
 import moscow.rockstar.ui.hud.HudElement;
 import moscow.rockstar.ui.hud.HudHistoryManager;
 import moscow.rockstar.ui.hud.HudList;
+import moscow.rockstar.ui.hud.impl.ArmorHud;
 import moscow.rockstar.ui.hud.impl.Effects;
 import moscow.rockstar.ui.hud.impl.KeyBinds;
 import moscow.rockstar.ui.hud.impl.TargetHud;
+import moscow.rockstar.ui.hud.impl.VanillaHudElement;
+import moscow.rockstar.ui.hud.impl.Watermark;
 import moscow.rockstar.ui.hud.impl.island.DynamicIsland;
 import moscow.rockstar.ui.hud.inline.impl.PlayerElement;
 import moscow.rockstar.ui.hud.inline.impl.WorldElement;
@@ -184,7 +187,15 @@ IScaledResolution {
     private void initialize() {
         Rockstar.getInstance().getEventManager().subscribe(this);
         this.island = new DynamicIsland();
-        this.elements.addAll(List.of(new Effects(), new KeyBinds(), new TargetHud(), this.island, new WorldElement(), new PlayerElement()));
+        // Dynamic Island and PlayerElement are intentionally NOT added to the HUD (disabled by request).
+        // island is still constructed because other systems (e.g. BossBarHud mixin) read getIsland().
+        this.elements.addAll(List.of(new Watermark(), new Effects(), new KeyBinds(), new TargetHud(), new ArmorHud(), new WorldElement()));
+        // Only scoreboard/bossbar/hotbar are movable. Health/hunger/xp are left fully vanilla
+        // (wrapping their renders caused them to disappear at random).
+        for (VanillaHudElement.Type type : new VanillaHudElement.Type[]{
+                VanillaHudElement.Type.SCOREBOARD, VanillaHudElement.Type.BOSSBAR, VanillaHudElement.Type.HOTBAR}) {
+            this.elements.add(new VanillaHudElement(type));
+        }
     }
 
     public Hud() {

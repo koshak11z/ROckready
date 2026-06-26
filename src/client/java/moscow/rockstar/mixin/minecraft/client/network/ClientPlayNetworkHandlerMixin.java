@@ -26,6 +26,7 @@
 package moscow.rockstar.mixin.minecraft.client.network;
 
 import moscow.rockstar.Rockstar;
+import moscow.rockstar.systems.commands.commands.ConfigCommand;
 import moscow.rockstar.systems.event.impl.game.PickupEvent;
 import moscow.rockstar.systems.event.impl.game.WorldChangeEvent;
 import moscow.rockstar.systems.modules.modules.visuals.XRay;
@@ -62,6 +63,15 @@ implements IMinecraft {
 
     protected ClientPlayNetworkHandlerMixin(MinecraftClient client, ClientConnection connection, ClientConnectionState connectionState) {
         super(client, connection, connectionState);
+    }
+
+    // Перехват кликабельных [Да]/[Нет] из ".cfg reset": клик по тексту шлёт "да"/"нет"
+    // через sendChatMessage — гасим его и обрабатываем подтверждение, не отправляя в чат.
+    @Inject(method={"sendChatMessage(Ljava/lang/String;)V"}, at={@At(value="HEAD")}, cancellable=true)
+    private void rockstar$onSendChatMessage(String content, CallbackInfo ci) {
+        if (ConfigCommand.isAwaitingReset() && ConfigCommand.tryConfirm(content)) {
+            ci.cancel();
+        }
     }
 
     @Inject(method={"onItemPickupAnimation"}, at={@At(value="INVOKE", target="Lnet/minecraft/client/world/ClientWorld;getEntityById(I)Lnet/minecraft/entity/Entity;", ordinal=0)})

@@ -24,6 +24,8 @@ package moscow.rockstar.systems.modules.modules.other;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import moscow.rockstar.framework.base.CustomComponent;
 import moscow.rockstar.framework.base.CustomDrawContext;
 import moscow.rockstar.framework.base.UIContext;
@@ -228,19 +230,8 @@ extends BaseModule {
             if (slot == null || !slot.hasStack()) continue;
             ItemStack stack = slot.getStack();
             if (this.shouldHideItem(stack, tooltip = stack.getTooltip(Item.TooltipContext.create((World)Auction.mc.world), (PlayerEntity)Auction.mc.player, (TooltipType)(Auction.mc.options.advancedItemTooltips ? TooltipType.ADVANCED : TooltipType.BASIC)))) continue;
-            long totalPrice = -1L;
-            for (Text lineText : tooltip) {
-                String line = lineText.getString();
-                if (!line.contains("\u0426\u0435\u043d\u0430") && !line.contains("\u0426e\u043d\u0430") && !line.contains("\u0426\u0435\u043da") && !line.contains("\u0426e\u043da") && !line.contains("\u041a\u0443\u0440\u0441")) continue;
-                try {
-                    String priceString = line.replaceAll("[^\\d]", "");
-                    if (priceString.isEmpty()) break;
-                    totalPrice = Long.parseLong(priceString);
-                }
-                catch (NumberFormatException priceString) {}
-                break;
-            }
-            if (totalPrice == -1L) continue;
+            long totalPrice = this.parsePrice(tooltip);
+            if (totalPrice <= 0L) continue;
             int count = stack.getCount();
             int maxDurability = stack.getMaxDamage();
             int currentDurability = maxDurability - stack.getDamage();
@@ -261,6 +252,115 @@ extends BaseModule {
             this.averageEffectivePrice = totalEffectivePrice / (double)pricedItemCount;
         } else {
             this.reset();
+        }
+    }
+
+    // Число с разделителями: "1 500 000", "1.500.000", "1,500,000", "1.5", "9 999 999"(NBSP) и т.д.
+    private static final Pattern NUM = Pattern.compile("\\d[\\d .,\\u00a0]*\\d|\\d");
+    // Сгруппированное по тысячам число: "9,999,999", "9 999 999", "1.500.000" — сильный признак цены.
+    private static final Pattern GROUPED = Pattern.compile("\\d{1,3}([ .,\\u00a0]\\d{3})+");
+
+    /**
+     * Достаёт цену из тултипа. Гораздо устойчивее старого парсера: понимает множители
+     * к/кк/ккк (k/kk/kkk, тыс/млн/млрд), разделители разрядов и разные метки цены/валюты.
+     */
+    private long parsePrice(List<Text> tooltip) {
+        List<String> lines = new ArrayList<String>();
+        for (Text t : tooltip) {
+            lines.add(t.getString());
+        }
+        // 1) строки с явной меткой цены
+        for (String raw : lines) {
+            String line = raw.toLowerCase();
+            if (containsAny(line, "цена", "цeна", "курс", "стоимост", "price", "buy", "купить", "продаж")) {
+                long p = extractAmount(line, false);
+                if (p > 0L) return p;
+            }
+        }
+        // 2) строки с валютой
+        for (String raw : lines) {
+            String line = raw.toLowerCase();
+            if (containsAny(line, "монет", "коин", "емеральд", "изумруд", "₽", "$", "руб", " алмаз")) {
+                long p = extractAmount(line, false);
+                if (p > 0L) return p;
+            }
+        }
+        // 3) число с множителем (к/кк/ккк) ИЛИ сгруппированное по тысячам ("9,999,999", "9 999 999")
+        for (String raw : lines) {
+            long p = extractAmount(raw.toLowerCase(), true);
+            if (p > 0L) return p;
+        }
+        // 4) совсем крайний случай: самое большое «крупное» число (>= 1000) в тултипе
+        long fallback = -1L;
+        for (String raw : lines) {
+            Matcher matcher = NUM.matcher(raw.toLowerCase());
+            while (matcher.find()) {
+                long v = plainLong(matcher.group());
+                if (v >= 1000L && v > fallback) fallback = v;
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean containsAny(String line, String... keys) {
+        for (String key : keys) {
+            if (line.contains(key)) return true;
+        }
+        return false;
+    }
+
+    /** Берёт наибольшее «ценоподобное» число в строке. requireSuffix — только с множителем ИЛИ сгруппированное. */
+    private static long extractAmount(String line, boolean requireSuffix) {
+        Matcher matcher = NUM.matcher(line);
+        long best = -1L;
+        while (matcher.find()) {
+            String numStr = matcher.group();
+            long mult = multiplierOf(line.substring(matcher.end()));
+            boolean grouped = GROUPED.matcher(numStr).matches();
+            if (requireSuffix && mult == 1L && !grouped) continue;
+            long val = mult > 1L ? decimalTimes(numStr, mult) : plainLong(numStr);
+            if (val > 0L && val > best) best = val;
+        }
+        return best;
+    }
+
+    private static long multiplierOf(String rest) {
+        String r = rest.trim();
+        if (r.isEmpty()) return 1L;
+        String[][] groups = {{"ккк", "kkk", "млрд"}, {"кк", "kk", "млн"}, {"к", "k", "тыс"}};
+        long[] mults = {1_000_000_000L, 1_000_000L, 1_000L};
+        for (int g = 0; g < groups.length; ++g) {
+            for (String s : groups[g]) {
+                // суффикс должен быть отдельным (за ним не буква), иначе ловим слова вроде «которое»
+                if (r.startsWith(s) && (s.length() >= r.length() || !Character.isLetter(r.charAt(s.length())))) {
+                    return mults[g];
+                }
+            }
+        }
+        return 1L;
+    }
+
+    private static long decimalTimes(String numStr, long mult) {
+        String norm = numStr.replace(" ", "").replace(" ", "").replace(",", ".");
+        norm = norm.replaceAll("[\\s\\u00a0]", "");
+        int last = norm.lastIndexOf(46);
+        if (last >= 0) {
+            norm = norm.substring(0, last).replace(".", "") + "." + norm.substring(last + 1).replace(".", "");
+        }
+        try {
+            return (long) (Double.parseDouble(norm) * (double) mult);
+        } catch (NumberFormatException e) {
+            return -1L;
+        }
+    }
+
+    private static long plainLong(String numStr) {
+        String digits = numStr.replaceAll("[^\\d]", "");
+        if (digits.isEmpty()) return -1L;
+        try {
+            return Long.parseLong(digits);
+        } catch (NumberFormatException e) {
+            return -1L;
         }
     }
 

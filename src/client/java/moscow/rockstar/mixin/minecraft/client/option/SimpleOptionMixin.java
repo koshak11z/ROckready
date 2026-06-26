@@ -15,7 +15,7 @@
 package moscow.rockstar.mixin.minecraft.client.option;
 
 import moscow.rockstar.Rockstar;
-import moscow.rockstar.systems.modules.modules.visuals.Ambience;
+import moscow.rockstar.systems.modules.modules.visuals.FullBright;
 import net.minecraft.client.option.SimpleOption;
 import net.minecraft.text.Text;
 import org.spongepowered.asm.mixin.Final;
@@ -39,9 +39,9 @@ public class SimpleOptionMixin<T> {
         if (Rockstar.getInstance().getModuleManager() == null) {
             return;
         }
-        Ambience ambienceModule = Rockstar.getInstance().getModuleManager().getModule(Ambience.class);
-        if (ambienceModule.isEnabled() && ambienceModule.getBright().isEnabled() && this.field_38280.equals((Object)Text.translatable((String)"options.gamma"))) {
-            cir.setReturnValue(1337.0);
+        FullBright fullBright = Rockstar.getInstance().getModuleManager().getModule(FullBright.class);
+        if (fullBright != null && fullBright.isEnabled() && this.field_38280.equals((Object)Text.translatable((String)"options.gamma"))) {
+            cir.setReturnValue(fullBright.getGamma());
         }
     }
 

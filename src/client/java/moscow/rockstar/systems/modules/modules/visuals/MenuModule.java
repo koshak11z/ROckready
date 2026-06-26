@@ -24,8 +24,9 @@ public class MenuModule
 extends BaseModule {
     private static final MenuCloseListener menuCloseListener = new MenuCloseListener();
     private final ModeSetting mode = new ModeSetting(this, "modules.settings.menu.mode");
-    private final ModeSetting.Value dropdown = new ModeSetting.Value(this.mode, "modules.settings.menu.mode.dropdown");
-    private final ModeSetting.Value modern = new ModeSetting.Value(this.mode, "modules.settings.menu.mode.modern");
+    // Panel (dropdown) mode disabled by request — only the modern ClickGUI remains.
+    // private final ModeSetting.Value dropdown = new ModeSetting.Value(this.mode, "modules.settings.menu.mode.dropdown");
+    private final ModeSetting.Value modern = new ModeSetting.Value(this.mode, "modules.settings.menu.mode.modern").select();
 
     @Override
     public void onEnable() {

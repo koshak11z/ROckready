@@ -34,6 +34,27 @@ public class ThemeManager {
         this.currentTheme = this.currentTheme == Theme.DARK ? Theme.LIGHT : Theme.DARK;
     }
 
+    /** Сброс темы к стандартной (тёмная + фиолетовый акцент) — используется в {@code .cfg reset}. */
+    public void reset() {
+        this.currentTheme = Theme.DARK;
+        this.customAccentColor = new ColorRGBA(151.0f, 71.0f, 255.0f);
+        this.customTextColor = Theme.DARK.getTextColor();
+        this.customGuiTextActiveColor = Theme.DARK.getTextColor();
+        this.customGuiTextInactiveColor = Theme.DARK.getTextColor().withAlpha(160.0f);
+        this.customHeaderTextColor = Theme.DARK.getTextColor();
+        this.customLogoBackgroundColor = new ColorRGBA(151.0f, 71.0f, 255.0f);
+        this.customLogoTextColor = Theme.DARK.getTextColor();
+        this.customVisualsColor = new ColorRGBA(151.0f, 71.0f, 255.0f);
+        this.customBackgroundColor = Theme.DARK.getBackgroundColor();
+        this.customAdditionalColor = Theme.DARK.getAdditionalColor();
+        this.customOutlineColor = Theme.DARK.getOutlineColor();
+        this.customFlatColor = Theme.DARK.getFlatColor();
+        this.customSliderTrackColor = new ColorRGBA(151.0f, 71.0f, 255.0f);
+        this.customSliderCircleColor = new ColorRGBA(255.0f, 255.0f, 255.0f);
+        this.customSliderWindowColor = Theme.DARK.getAdditionalColor();
+        this.customTooltipTextColor = Theme.DARK.getTextColor();
+    }
+
     public Theme getCurrentTheme() {
         if (Interface.glassSelected()) {
             return Theme.DARK;
@@ -218,6 +239,33 @@ public class ThemeManager {
     @Generated
     public void setCurrentTheme(Theme currentTheme) {
         this.currentTheme = currentTheme;
+    }
+
+    /** Derive a full dark custom theme from a single base/accent color. */
+    public void applyAutoTheme(ColorRGBA base) {
+        float h = base.getHue();
+        float s = base.getSaturation();
+        ColorRGBA bg = ColorRGBA.fromHSB(h, Math.min(s, 0.6f) * 0.5f, 0.07f);
+        ColorRGBA add = ColorRGBA.fromHSB(h, Math.min(s, 0.6f) * 0.4f, 0.12f);
+        ColorRGBA text = ColorRGBA.fromHSB(h, 0.04f, 0.95f);
+        ColorRGBA white = new ColorRGBA(255.0f, 255.0f, 255.0f);
+        this.setCustomAccentColor(base);
+        this.setCustomBackgroundColor(bg);
+        this.setCustomAdditionalColor(add);
+        this.setCustomOutlineColor(ColorRGBA.fromHSB(h, 0.3f, 0.22f));
+        this.setCustomFlatColor(add);
+        this.setCustomTextColor(text);
+        this.setCustomGuiTextActiveColor(text);
+        this.setCustomGuiTextInactiveColor(text.withAlpha(160.0f));
+        this.setCustomHeaderTextColor(text);
+        this.setCustomTooltipTextColor(text);
+        this.setCustomLogoBackgroundColor(base);
+        this.setCustomLogoTextColor(white);
+        this.setCustomTargetESPColor(base);
+        this.setCustomWorldColor(base);
+        this.setCustomSliderTrackColor(base);
+        this.setCustomSliderCircleColor(white);
+        this.setCustomSliderWindowColor(add);
     }
 }
 

@@ -88,7 +88,10 @@ public class InventoryMove extends BaseModule {
         if (packet instanceof ClickSlotC2SPacket slot) {
             this.flushHeldOpenInventoryPacket();
             this.inventoryActionPerformed = true;
-            if ((this.packetsHeld || this.hasMovementInput()) && this.shouldMoveInScreen()) {
+            // Only hold/delay clicks in the player's OWN inventory. In external containers (chests)
+            // send clicks immediately, otherwise they don't register until the screen is closed.
+            if ((this.packetsHeld || this.hasMovementInput()) && this.shouldMoveInScreen()
+                    && mc.currentScreen instanceof InventoryScreen) {
                 this.packets.add(slot);
                 this.packetsHeld = true;
                 event.cancel();

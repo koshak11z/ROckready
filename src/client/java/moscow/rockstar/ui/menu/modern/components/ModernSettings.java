@@ -166,6 +166,11 @@ extends CustomComponent {
     public void onMouseClicked(double mouseX, double mouseY, MouseButton button) {
         for (MenuSettingComponent component : this.components) {
             if (component.getOpacity() == 0.0f || !this.isHovered(mouseX, mouseY) && button == MouseButton.LEFT) continue;
+            // СКМ по настройке — сброс к рекомендованному значению.
+            if (button == MouseButton.MIDDLE && component.isHovered(mouseX, mouseY)) {
+                component.getSetting().resetDefault();
+                continue;
+            }
             component.onMouseClicked(mouseX, mouseY, button);
         }
         if (GuiUtility.isHovered((double)this.x, (double)(this.y + 24.0f) - this.scrollHandler.getValue(), (double)this.width, 18.0, mouseX, mouseY) && button == MouseButton.LEFT) {

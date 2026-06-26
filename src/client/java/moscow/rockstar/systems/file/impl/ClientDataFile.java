@@ -36,6 +36,8 @@ import moscow.rockstar.systems.theme.Theme;
 import moscow.rockstar.systems.theme.ThemeManager;
 import moscow.rockstar.ui.components.ColorPicker;
 import moscow.rockstar.ui.hud.HudElement;
+import moscow.rockstar.ui.hud.impl.VanillaHudElement;
+import moscow.rockstar.ui.mainmenu.alt.AltManager;
 import moscow.rockstar.utility.colors.ColorRGBA;
 import moscow.rockstar.utility.interfaces.IMinecraft;
 import net.minecraft.client.session.Session;
@@ -52,6 +54,7 @@ implements IMinecraft {
         json.add("customTheme", (JsonElement)this.getCustomThemeJsonObject());
         json.addProperty("swing", Rockstar.getInstance().getSwingManager().getCurrent());
         json.add("hudElements", (JsonElement)this.getHudElementsJsonArray());
+        json.add("alts", (JsonElement)this.getAltsJsonArray());
         json.add("friends", (JsonElement)this.getFriendsJsonArray());
         json.add("colorPickerPresets", (JsonElement)this.getColorPickerPresetsJsonArray());
         json.add("password", (JsonElement)this.getPassword());
@@ -133,6 +136,12 @@ implements IMinecraft {
             if (object.has("colorPickerPresets")) {
                 this.loadColorPickerPresets(object.getAsJsonArray("colorPickerPresets"));
             }
+            if (object.has("alts")) {
+                AltManager.clear();
+                for (JsonElement altElement : object.getAsJsonArray("alts")) {
+                    AltManager.add(altElement.getAsString());
+                }
+            }
             if (object.has("hudElements")) {
                 JsonArray hudElementsArray = object.getAsJsonArray("hudElements");
                 for (JsonElement elemObj : hudElementsArray) {
@@ -146,6 +155,9 @@ implements IMinecraft {
                     ((HudElement)element).setX(x);
                     ((HudElement)element).setY(y);
                     ((HudElement)element).setShowing(showing);
+                    if (element instanceof VanillaHudElement vanilla && elementObject.has("offX") && elementObject.has("offY")) {
+                        vanilla.setOffsets(elementObject.get("offX").getAsFloat(), elementObject.get("offY").getAsFloat());
+                    }
                     if (!elementObject.has("settings")) continue;
                     JsonObject settingsObject = elementObject.getAsJsonObject("settings");
                     for (Setting setting : ((HudElement)element).getSettings()) {
@@ -170,11 +182,20 @@ implements IMinecraft {
     private JsonArray getHudElementsJsonArray() {
         JsonArray hudElementsArray = new JsonArray();
         for (HudElement element : Rockstar.getInstance().getHud().getElements()) {
+            // Never write NaN coords — Gson refuses NaN and would fail the ENTIRE config save,
+            // wiping every HUD position on the next launch.
+            if (Float.isNaN(element.getX()) || Float.isNaN(element.getY())) {
+                continue;
+            }
             JsonObject elementObject = new JsonObject();
             elementObject.addProperty("name", element.getName());
             elementObject.addProperty("x", (Number)Float.valueOf(element.getX()));
             elementObject.addProperty("y", (Number)Float.valueOf(element.getY()));
             elementObject.addProperty("showing", Boolean.valueOf(element.isShowing()));
+            if (element instanceof VanillaHudElement vanilla) {
+                elementObject.addProperty("offX", (Number)Float.valueOf(vanilla.getOffX()));
+                elementObject.addProperty("offY", (Number)Float.valueOf(vanilla.getOffY()));
+            }
             elementObject.add("settings", (JsonElement)this.getSettingsJsonObject(element));
             hudElementsArray.add((JsonElement)elementObject);
         }
@@ -187,6 +208,14 @@ implements IMinecraft {
             settingsObject.add(setting.getName(), setting.save());
         }
         return settingsObject;
+    }
+
+    private JsonArray getAltsJsonArray() {
+        JsonArray altsArray = new JsonArray();
+        for (String name : AltManager.getAlts()) {
+            altsArray.add(name);
+        }
+        return altsArray;
     }
 
     private JsonArray getFriendsJsonArray() {

@@ -69,9 +69,14 @@ IMinecraft {
         RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)Math.min(1.0f, anim));
         float scale = 0.5f + anim * 0.5f - 0.05f * this.selecting.getValue();
         RenderUtility.scale(context.getMatrices(), this.x + this.width / 2.0f, this.y + this.height / 2.0f, scale);
-        this.renderComponent(context);
-        RenderUtility.end(context.getMatrices());
-        RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)1.0f);
+        try {
+            this.renderComponent(context);
+        } finally {
+            // Always restore matrix + shader color even if renderComponent throws, so a bad element
+            // can't leave the shader alpha/matrix dirty and blank the vanilla HUD next frame.
+            RenderUtility.end(context.getMatrices());
+            RenderSystem.setShaderColor((float)1.0f, (float)1.0f, (float)1.0f, (float)1.0f);
+        }
     }
 
     protected abstract void renderComponent(UIContext var1);
@@ -127,6 +132,11 @@ IMinecraft {
                     this.y = this.snapToLine(line, this.y, List.of(Float.valueOf(0.0f), Float.valueOf(this.height)), List.of(Float.valueOf(0.0f), Float.valueOf(-this.height)));
                 }
             }
+        } else if (!Float.isNaN(this.x) && !Float.isNaN(this.y)) {
+            // Keep elements on-screen after a resolution / GUI-scale change (F11 etc.) so they never
+            // get shoved off-screen and look like the layout "reset".
+            this.x = Math.clamp(this.x, 0.0f, Math.max(0.0f, IScaledResolution.sr.getScaledWidth() - this.width));
+            this.y = Math.clamp(this.y, 0.0f, Math.max(0.0f, IScaledResolution.sr.getScaledHeight() - this.height));
         }
         if (this.isHovered(context) && this.animation.getValue() >= 1.0f) {
             CursorUtility.set(CursorType.HAND);
